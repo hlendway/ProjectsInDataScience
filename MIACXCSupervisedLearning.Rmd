@@ -1,0 +1,496 @@
+---
+title: "| Projects in Data Science    \n| Activity A9: MIAC XC Supervised Learning\n"
+author: "Hannah Sonsalla"
+output:
+  bookdown::tufte_html2:
+    number_sections: no
+    split_by: none
+    toc: no
+  bookdown::pdf_document2:
+    latex_engine: pdflatex
+    number_sections: no
+    toc: no
+  bookdown::tufte_handout2:
+    latex_engine: xelatex
+    number_sections: no
+    toc: no
+  bookdown::html_document2:
+    number_sections: no
+    split_by: none
+    toc: no
+---
+
+```{r}
+library(rvest)
+library(dplyr)
+library(magrittr)
+library(tidyverse)
+library(jsonlite)
+library(stringr)
+library(xml2)
+library(XML)
+library(rvest)
+library(tidyverse)
+library(httr)
+library(httpuv)
+library(RCurl)
+library(stringr)
+library(lubridate)
+library(tree)
+library(caret)
+library(tree)
+library(randomForest)
+library(gbm)
+```
+
+# Minnesota XC Data
+
+Data set
+```{r}
+# updated csv file with 2013 conference corrected, 2017 conference included
+minnesota_xc <- read.csv("/Users/hannahsonsalla/Desktop/Math/DataScience/Project/miacNoTime171104.csv")
+```
+
+MIAC Data set
+```{r}
+miacSchools = c("Augsburg", "Bethel", "Carleton", "Concordia Moorhead", "Gustavus Adolphus", "Hamline", "Macalester", "St. Benedict", "St. Catherine", "St. John's", "Saint Mary's", "St. Olaf", "St. Thomas")
+miac_xc <-
+  minnesota_xc %>% 
+  mutate(team = trimws(team, "both")) %>%
+  mutate(team = gsub("\xa0", NA, team)) %>%
+  mutate(team = ifelse(grepl("St Olaf", team), "St. Olaf", team)) %>%
+  mutate(team = ifelse(grepl("St Catherine", team), "St. Catherine", team)) %>%
+  mutate(team = ifelse(grepl("St Benedict", team), "St. Benedict", team)) %>%
+  mutate(team = ifelse(grepl("St Thomas", team), "St. Thomas", team)) %>%
+  mutate(team = ifelse(grepl("Saint John", team), "St. John's", team)) %>%
+  mutate(team = ifelse(grepl("St Olaf", team), "St. Olaf", team)) %>%
+  mutate(team = ifelse(grepl("Gustavus", team), "Gustavus Adolphus", team)) %>%
+  filter(team %in% miacSchools, (meet_kilometers==6 | meet_kilometers==8)) %>%
+  mutate(score = ifelse(score == 0, NA, score)) %>%
+  mutate(class_year = as.character(class_year)) %>%
+  mutate(class_year = gsub("\xa0", NA, class_year)) %>%
+  mutate(class_year = substr(class_year,1,2),
+         class_year = as.factor(toupper(class_year)),
+         meet_name = ifelse((grepl("MIAC",meet_name)),"Minnesota Intercollegiate Championships",as.character(meet_name)))
+```
+
+
+# Supervised Learning: Modeling and Prediction
+
+Our ultimate goal is to predict race times at MIAC Championships.  We can predict this time based on prior races from the year, gender and class year.
+
+##Supervised Learning Data Set
+
+We create a tibble that has a row corresponding to a single runner and a given year.  The variables should include information we have about each runner including gender, class year, team, meet race times along with MIAC Championship times.  For all runners to be considered equally, we chose to include three prior race times from the given year.  Although a fair amount of runners ran three races excluding conference, some did not.  For those runners with two prior race times, we took an average to obtain a third race time to be consistent.
+
+### Altered Modeling Data Set
+
+CSV also on desktop:
+#miac_xc_model_set <- read.csv("/Users/hannahsonsalla/Desktop/Math/DataScience/Project/modelingSet171104.csv")
+```{r}
+miac_xc_model_set <- 
+  miac_xc %>% 
+  select(name,meet_name,meet_year,new_time,race_group,class_year,team) %>% 
+  group_by(name,meet_name,meet_year,class_year,race_group) %>% 
+  spread(meet_name,new_time,fill="") %>%  
+  unite("times",c(6:12,14:30),sep=",",remove=TRUE) %>% 
+  mutate(times = gsub("(,,*)",",",times), times = gsub("^,*|,*$","",times)) %>% 
+  separate(times,c("meet1","meet2","meet3"),sep=",",remove = TRUE) %>% 
+  filter(!is.na(meet2)) %>% 
+  mutate(meet1=as.numeric(meet1),
+         meet2=as.numeric(meet2),
+         meet3 = ifelse((is.na(meet3)),((meet1+meet2)/2),as.numeric(meet3))) %>% 
+  filter(`Minnesota Intercollegiate Championships`!="") %>% 
+  rename(Minnesota.Intercollegiate.Championships=`Minnesota Intercollegiate Championships`) %>%
+  mutate(Minnesota.Intercollegiate.Championships = as.numeric(Minnesota.Intercollegiate.Championships))
+```
+
+Add time buckets
+```{r}
+miac_xc_model_set2 <-
+  miac_xc_model_set %>% 
+  mutate(MIACTimeCat=cut(Minnesota.Intercollegiate.Championships, breaks=seq(20,42,by=2))) %>%
+  ungroup()
+```
+
+## Training and Testing Set
+
+We split our data into 2 pieces.  Of the 995 observations, we'll set aside 199 cases (20%) for testing and use the other 796 cases for training.
+
+```{r}
+#set the random seed
+set.seed(15)
+
+# sample 20% for testing
+RunnersTest <- sample_n(miac_xc_model_set2, size = 199)
+
+# identify cases in Users that are NOT the test data
+# store these for training
+RunnersTrain <- dplyr::setdiff(miac_xc_model_set2, RunnersTest)
+```
+
+## Exporatory Visualization
+We will consider predicting MIAC Championship times from gender, class year and previous meet times.  
+
+### Visualization of relationship between gender and conference time
+Let's look at the relationship between conference time and gender.
+
+```{r}
+ggplot(RunnersTrain, aes(x = race_group, fill = MIACTimeCat)) + geom_bar(position = "fill") + labs(x = "Gender", y = "Percentage", title = "MIAC Championship Time Ranges for Runners", fill = "MIAC Championship Time")
+```
+
+This plot shows that most men ran the 8k MIAC Championship race between 28 - 30 minutes and between 26 - 28 minutes.  Most women finished the 6k race between 24 and 26 minutes.
+
+And here's the same plot for each gender faceted by meet year:
+
+```{r}
+RunnersTrainMen <-
+  RunnersTrain %>%
+  filter(race_group == "Men")
+
+RunnersTrainWomen <-
+  RunnersTrain %>% 
+  filter(race_group == "Women")
+```
+
+Men:
+```{r}
+ggplot(RunnersTrainMen, aes(x = race_group, fill = MIACTimeCat)) + geom_bar(position = "fill") + facet_grid(.~ meet_year) + labs(x = "Gender", y = "Percentage", title = "MIAC Championship Time Ranges for Men", fill = "MIAC Championship Time")
+```
+
+This plot shows that men completed the MIAC Championship race much faster in 2012 than in following years.  Over half of the men in 2012, finished between 26 - 28 minutes.  The number of men finishing in this time range has shrunk over the years.  Additionally, the time range 24 - 26 minutes is present in 2012 (~ 12%) and 2015 (~ 4%), but not the other years.  This shows that times have become slower in more recent years.
+
+Women:
+```{r}
+ggplot(RunnersTrainWomen, aes(x = race_group, fill = MIACTimeCat)) + geom_bar(position = "fill") + facet_grid(.~ meet_year) + labs(x = "Gender", y = "Percentage", title = "MIAC Championship Time Ranges for Women", fill = "MIAC Championship Time")
+```
+
+The women's MIAC Championship times follow a similar trend.  It appears that each year most women runners finished the race between 24 and 26 minutes.  However, the location of this time range has shifted upward as we move left to right along the plot.  This means that there have been fewer runners running faster than 24 minutes or between 24 and 26 minutes.  Thus, times have become slower over the years.
+
+### Visualization of relationship between meet 3 time, gender and conference time
+
+```{r}
+ggplot(RunnersTrain,aes(x = meet3,y=Minnesota.Intercollegiate.Championships,color=race_group))+geom_jitter(alpha=0.5)+geom_smooth(se=F)+facet_grid(.~ race_group) + labs(x = "Meet 3 Time", y = "MIAC Championship Time", title = "MIAC Championship Time (in minutes)", subtitle = "Based on Meet 3 time and gender")
+```
+
+
+### Visualization of relationship between meet 1 time, meet 2 time and conference time
+
+```{r}
+ggplot(RunnersTrain,aes(x = meet1,y=meet2,color=MIACTimeCat))+geom_jitter(alpha=0.5)+facet_grid(.~ race_group) + labs(x = "Meet 1 Time", y = "Meet 2 Time", title = "MIAC Championship Time (in minutes)", subtitle = "Based on Meet 1 time and Meet 2 time")
+```
+
+## Linear Regression
+
+I chose to create linear models as the data appears to follow a linear trend.  I will create two linear models.  The first will predict MIAC Championship times based on meet 3 times and gender.  The second will predict MIAC Championship times based on gender, class_year, meet 1 times, meet 2 times, and meet 3 times.
+
+lmMeet3Gender:
+```{r}
+#construct linear models
+lmMeet3Gender <- lm(Minnesota.Intercollegiate.Championships ~ race_group+meet3, RunnersTrain)
+summary(lmMeet3Gender)
+```
+
+plot linear model lmMeet3Gender:
+```{r}
+#plot the linear model
+ggplot(RunnersTrain,aes(x = meet3,y=Minnesota.Intercollegiate.Championships,color=race_group))+geom_jitter(alpha=0.5)+geom_smooth(method = "lm", se=F)+facet_grid(.~ race_group) + labs(x = "Meet 3 Time", y = "MIAC Championship Time", title = "Linear Prediction MIAC Championship Time (in minutes)", subtitle = "Based on Meet 3 time and gender")
+```
+
+lmALL:
+```{r}
+#construct linear models
+lmALL <- lm(Minnesota.Intercollegiate.Championships ~ race_group+class_year+meet1+meet2+meet3, RunnersTrain)
+summary(lmALL)
+```
+
+## Regression Tree
+Our response variable, MIAC Championship race times, is quantitative.  We will grow a regression tree.
+
+regression tree based on race_group and meet 3 time
+```{r}
+treeMeet3Gender <- tree(Minnesota.Intercollegiate.Championships ~ race_group + meet3, RunnersTrain)
+summary(treeMeet3Gender)
+```
+
+treeMeet3Gender Plot:
+```{r}
+plot(treeMeet3Gender )
+text(treeMeet3Gender , pretty = 0)
+```
+
+regression tree based on race_group, class_year, meet 1 time, meet 2 time, meet 3 time
+```{r}
+treeALL <- tree(Minnesota.Intercollegiate.Championships ~ race_group + class_year + meet1 + meet2 + meet3, RunnersTrain)
+summary(treeALL)
+```
+
+treeAll Plot:
+```{r}
+plot(treeALL)
+text(treeALL, pretty = 0)
+```
+
+Since both trees are exactly the same and only use meet 3 times to predict MIAC Championship times, I can conclude that the additional variables are irrelevant here.
+
+Let's use treeMeet3Gender and treeALL to predict MIAC times for all users in RunnersTrain
+```{r}
+#use treeMeet3Gender to predict MIAC times for all users in RunnersTrain   
+pred1 <- predict(treeMeet3Gender, RunnersTrain)
+#use treeMeetALL to predict MIAC times for all users in RunnersTrain   
+pred2 <- predict(treeALL, RunnersTrain)
+#store these predictions as "regression.tree.prediction" in RunnersTrain    
+RunnersTrain <- RunnersTrain %>% 
+    mutate(regression.tree.prediction.Meet3Gender=pred1) %>%
+    mutate(regression.tree.prediction.ALL=pred2)
+```
+
+Plot of treeMeet3Gender predictions: 
+```{r}
+#superimpose a line plot of these predictions on the data    
+ggplot(RunnersTrain, aes(y=regression.tree.prediction.Meet3Gender, x=meet3, color=race_group)) +
+    geom_line() + 
+    geom_jitter(aes(y=Minnesota.Intercollegiate.Championships, x=meet3, color=race_group), alpha=0.15) + facet_grid(.~ race_group) + labs(x = "Meet 3 Time", y = "MIAC Championship Time", title = "Regression Tree Prediction MIAC Championship Time (in minutes)", subtitle = "Based on Meet 3 time and gender")
+```
+
+From this plot I can see that the model appears to be an increasing piecewise function.  There are 7 possible predictions for men and 8 possible predictions for women.
+
+## Random Forest
+
+Let's try to use random forests to reduce variance in regression trees.  
+
+```{r}
+set.seed(2000)
+
+# random forest based on race_group and meet 3 time
+forestMeet3Gender <- randomForest(Minnesota.Intercollegiate.Championships ~ race_group + meet3, RunnersTrain)
+
+#random forest based on race_group, class_year, meet 1 time, meet 2 time, meet 3 time
+forestALL <- randomForest(Minnesota.Intercollegiate.Championships ~ race_group + class_year + meet1 + meet2 + meet3, RunnersTrain)
+
+forest.pred1 <- predict(forestMeet3Gender, RunnersTrain)  
+forest.pred2 <- predict(forestALL, RunnersTrain)
+
+RunnersTrain <- RunnersTrain %>% 
+    mutate(forest.prediction.Meet3Gender=forest.pred1) %>%
+    mutate(forest.prediction.ALL=forest.pred2) 
+```
+
+Plot of forestMeet3Gender predictions: 
+```{r}
+ggplot(RunnersTrain, aes(y=forest.prediction.Meet3Gender, x=meet3, color=race_group)) +
+    geom_line() + 
+    geom_jitter(aes(y=Minnesota.Intercollegiate.Championships, x=meet3, color=race_group), alpha=0.10) + facet_grid(.~ race_group) + labs(x = "Meet 3 Time", y = "MIAC Championship Time", title = "Random Forest Prediction MIAC Championship Time (in minutes)", subtitle = "Based on Meet 3 time and gender")
+```
+
+It appears that the random forest picks up on smaller hills and dips in times.  It is less rigid than a single tree and allows for more possible prediction values.
+
+## Evaluation and Comparison
+
+Let's test the different models on the test set (RunnersTest).
+
+The true ratings of the test cases are stored in RunnersTest$Minnesota.Intercollegiate.Championships.  I will create a data table TestResults that stores these alongside the gender, class year, meet 1 time, meet 2 time and meet 3 time of these cases as well as the predicted ratings for these cases calculated from each method.
+
+```{r}
+# linear models
+lmMeet3Gendertest <- predict(lmMeet3Gender, RunnersTest)
+lmALLtest <- predict(lmALL, RunnersTest)
+# regression tree models
+treeMeet3Gendertest <- predict(treeMeet3Gender, RunnersTest)
+treeALLtest <- predict(treeALL, RunnersTest)
+# random forest models
+forestMeet3Gendertest <- predict(forestMeet3Gender, RunnersTest)
+forestALLtest <- predict(forestALL, RunnersTest)
+
+TestResults <- RunnersTest %>% 
+    dplyr::select(c(race_group, class_year, meet1, meet2, meet3, Minnesota.Intercollegiate.Championships)) %>% 
+    mutate(lmMeet3Gendertest, lmALLtest, treeMeet3Gendertest, treeALLtest, forestMeet3Gendertest, forestALLtest)%>%
+    mutate(lmMeet3GenderError=(Minnesota.Intercollegiate.Championships-lmMeet3Gendertest),    
+             lmALLError=(Minnesota.Intercollegiate.Championships-lmALLtest), 
+             treeMeet3GenderError=(Minnesota.Intercollegiate.Championships-treeMeet3Gendertest), 
+             treeALLError=(Minnesota.Intercollegiate.Championships-treeALLtest),
+             forestMeet3GenderError=(Minnesota.Intercollegiate.Championships-forestMeet3Gendertest),
+             forestALLError=(Minnesota.Intercollegiate.Championships-forestALLtest))
+```
+
+### Average Squared Prediction Error for predicting conference time using gender and meet 3 time
+```{r}
+mean(TestResults$lmMeet3GenderError^2)
+mean(TestResults$treeMeet3GenderError^2)
+mean(TestResults$forestMeet3GenderError^2)
+```
+
+It appears that the linear model had the best prediction whereas random forests had the worst prediction.
+
+### Average Squared Prediction Error for predicting conference time using gender, class year, meet 1 time, meet 2 time, meet 3 time
+```{r}
+mean(TestResults$lmALLError^2)
+mean(TestResults$treeALLError^2)
+mean(TestResults$forestALLError^2)
+```
+
+Once again, the linear model had the best prediction, although random forests were close.  Regression trees had the worst prediction.  The lowest error rate given in the model with predictors of gender and meet 3 time was 0.8683.  Here the lowest error rate is 0.7560.  Thus, the additional predictors (class year, meet time 1, meet time 2) resulted in a lower test error rate.
+
+# Comparison of Predictions to Team Placings
+
+Here I will convert the prediction times to placings which can be used to calculate team scores and rankings.  The goal is to compare how well the linear model does compared to real data.
+
+## Team Rankings 2012 - 2017
+Actual Men Team Rankings:
+```{r}
+miac_men_team_placings <-
+  miac_xc %>%
+  filter(grepl("Minnesota Intercollegiate Championships", meet_name)) %>% 
+  filter(race_group == "Men") %>%
+  mutate(score = as.numeric(score)) %>% 
+  filter(!is.na(score)) %>%
+  group_by(team, meet_year) %>%
+  top_n(n = -5, wt = score) %>%
+  summarise(team_score = sum(score)) %>% 
+  group_by(meet_year) %>%
+  arrange(team_score) %>%
+  mutate(team_rank = row_number()) %>%
+  arrange(meet_year)
+```
+
+Plot:
+```{r}
+men_team_placing_plot <- ggplot(miac_men_team_placings, aes(x = meet_year, y = team_rank, group = team)) + geom_point(aes(color = team), size = 2) + geom_line(aes(color = team)) + labs(title = "MIAC Men Team Placings 2012 - 2017", x = "year",  y = "team rank") + scale_color_manual(values=c("palevioletred1", "violetred1", "red", "darkorange2", "goldenrod", "green1", "green4", "turquoise", "blue", "purple", "slategrey")) 
+
+men_team_placing_plot
+```
+
+Actual WomenTeam Rankings:
+```{r}
+miac_women_team_placings <-
+  miac_xc %>%
+  filter(grepl("Minnesota Intercollegiate Championships", meet_name)) %>%
+  filter(race_group == "Women") %>%
+  mutate(score = as.numeric(score)) %>%
+  filter(!is.na(score)) %>%
+  group_by(team, meet_year) %>%
+  top_n(n = -5, wt = score) %>% 
+  summarise(team_score = sum(score)) %>%
+  group_by(meet_year) %>%
+  arrange(team_score) %>%
+  mutate(team_rank = row_number()) %>%
+  arrange(meet_year)
+```
+
+Plot
+```{r}
+women_team_placing_plot <- ggplot(miac_women_team_placings, aes(x = meet_year, y = team_rank, group = team)) + geom_point(aes(color = team), size = 2) + geom_line(aes(color = team)) + labs(title = "MIAC Women Team Placings 2012 - 2017", x = "year",  y = "team rank") + scale_color_manual(values=c("palevioletred1", "violetred1", "red", "darkorange2", "goldenrod", "green1", "green4", "turquoise", "blue", "steelblue4", "purple", "slategrey")) 
+women_team_placing_plot
+```
+
+
+## Team Ranking Prediction for 2017
+We split the data into 2 pieces.  I'll set aside results from 2017 for testing and use the other years for training (2012-2016).
+
+```{r}
+Runners2Test <- 
+  miac_xc_model_set2 %>% 
+  filter(meet_year == 2017)
+
+# identify cases in Users that are NOT the test data
+# store these for training
+Runners2Train <- dplyr::setdiff(miac_xc_model_set2, Runners2Test)
+```
+
+### Linear Model
+lmALL:
+```{r}
+#construct linear model
+lmALL2 <- lm(Minnesota.Intercollegiate.Championships ~ race_group+class_year+meet1+meet2+meet3, Runners2Train)
+```
+
+Predict Test Time Results:
+```{r}
+# linear model
+lmALL2test <- predict(lmALL2, Runners2Test)
+TestResults2 <- Runners2Test %>% 
+    dplyr::select(c(name, team, meet_year, race_group, class_year, meet1, meet2, meet3, Minnesota.Intercollegiate.Championships)) %>% 
+    mutate(lmALL2test) %>%
+    mutate(lmALL2Error=(Minnesota.Intercollegiate.Championships-lmALL2test))
+```
+
+Average Squred Prediction Error:
+```{r}
+mean(TestResults2$lmALL2Error^2)
+```
+
+Let's assign a place to each runner based on their predicted time.
+```{r}
+miac_2017_placings <-
+  TestResults2 %>%
+  arrange(race_group,lmALL2test) %>%
+  group_by(race_group) %>%
+  mutate(place = ave(lmALL2test, FUN=seq_along)) 
+```
+
+2017 Men Team Ranking Predictions:
+```{r}
+men_2017_team_ranking <-
+  miac_2017_placings %>% 
+  filter(race_group == "Men") %>% 
+  group_by(team) %>% 
+  top_n(n = -7, wt = place) %>%
+  ungroup() %>% 
+  mutate(score = ave(lmALL2test, FUN=seq_along)) %>% 
+  group_by(team) %>% 
+  top_n(n = -5, wt = score) %>%
+  summarise(team_score = sum(score)) %>%
+  arrange(team_score) %>%
+  mutate(team_rank = row_number()) 
+  
+men_2017_team_ranking  
+```  
+
+
+2017 Women Team Ranking Predictions:
+```{r}
+women_2017_team_ranking <-
+  miac_2017_placings %>% 
+  filter(race_group == "Women") %>% 
+  group_by(team) %>% 
+  top_n(n = -7, wt = place) %>%
+  ungroup() %>% 
+  mutate(score = ave(lmALL2test, FUN=seq_along)) %>% 
+  group_by(team) %>% 
+  top_n(n = -5, wt = score) %>%
+  summarise(team_score = sum(score)) %>%
+  arrange(team_score) %>%
+  mutate(team_rank = row_number()) 
+  
+women_2017_team_ranking  
+``` 
+
+## Real Results vs Predictions
+
+### 2017 Men MIAC Championship Team Rankings
+
+The predictions from our model indicate which teams were expected to run better than other teams.  Teams that did not compete in an adequate amount of meets (Minnesota meets) at the required distance (8k) were not able to be considered in our model.  Thus, we do not have predictions for where St. Olaf, St. John's, Bethel, Hamline would have placed.  Here's the order that our model predicted:
+
+St. Thomas, Concordia Moorhead, Carleton, Gustavus Adolphus, Macalester, Saint Mary's, Augsburg
+
+Here are the actual men's team results:
+
+Carleton, St. Olaf, St. John's (Minn.), St. Thomas (Minn.), Bethel (Minn.), Hamline, Macalester, Gustavus Adolphus, Concordia-Moorhead, Saint Mary's (Minn.), Augsburg
+
+The model correctly predicted that Augsburg would come in last and that Saint Mary's would come in second to last.  Additionally, it also predicted that St. Thomas would beat Concordia Moorhead, Gustavus Adolphus, Macalester, Saint Mary's and Augsburg - and they did!  However, there are some inconsistencies compared to the real results.  Carelton ended up winning the meet.  However, our model predicted that the highest they could score would be third place.  This low prediction ranking could be due to having top runners sit out (not compete) at the races from which we sampled.  
+
+### 2017 Women MIAC Championship Team Rankings
+
+We were not able to include St. Olaf and St. Mary's in our model as they only competed in one 6k in Minnesota prior to conference.
+
+Here's the order that our model predicted:
+Carleton, Gustavus Adolphus, St. Thomas, St. Benedict, Macalester, Augsburg, Concordia Moorhead, Hamline, St. Catherine, Bethel
+
+Here are the actual women's team results:
+
+Carleton, St. Olaf, St. Thomas (Minn.), Gustavus Adolphus, Bethel (Minn.), Macalester, Hamline, St. Benedict, Concordia-Moorhead, St. Catherine, Saint Mary's (Minn.), Augsburg
+
+The model correctly predicted that Carleton would win!  It also correctly predicted that St. Thomas and Gustavus Adolphus would be ranked quite high.  There is some miscalculation however as our prediction indicated that Bethel would finish last or fairly close to last.  However, they ended up finishing in 5th place.  
+
+
+

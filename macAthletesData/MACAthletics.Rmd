@@ -1,0 +1,173 @@
+---
+title: "MACAthletics"
+output: html_document
+---
+
+Recruiting Research Questions:
+1. How much recruiting/interactions with recruits do coaches need to do to get a full roster each year?
+2. What does the current athletic student body look like, could this help you target recruits?
+3. Once a recruited student has been accepted what is the rate for which students attend vs. not and what was different about their experiences that may have influenced their decision.
+
+Data Aquisition
+1. Data from athletics
+2. Data from admissions?
+3. Historical roster lists
+4. Data interest form online could be helpful
+
+```{r}
+library(rvest)
+library(dplyr)
+library(magrittr)
+library(tidyverse)
+library(jsonlite)
+library(stringr)
+library(xml2)
+library(XML)
+library(rvest)
+library(tidyverse)
+library(httr)
+library(httpuv)
+library(RCurl)
+```
+
+Data scraping
+Scrape data from MAC rosters online.  Each row represents an athlete.  
+```{r}
+macAthleteData <- data.frame()
+
+for(i in 1:411) {
+  #i=1
+  url = paste("http://athletics.macalester.edu/roster.aspx?roster=",i,sep="")
+  teamPage <- read_html(url)
+  
+  teamYearRoster <- teamPage %>% 
+    html_node(".page_title") %>%
+    html_nodes("h2") %>% 
+    html_text() %>% 
+    toString()
+  
+  nameList <- teamPage %>% 
+    html_nodes(".roster_dgrd_full_name")
+    
+  yearList <- teamPage %>% 
+    html_nodes(".roster_dgrd_academic_year")
+  
+  hometownList <- teamPage %>% 
+    html_nodes(".roster_dgrd_hometownhighschool")
+  
+  if(length(nameList) > 0) {
+    for(j in 1:length(nameList)) {
+      name = ""
+      year = ""
+      hometownHS = ""
+      
+      name <- nameList[j] %>% 
+        html_node("a") %>% 
+        html_text() %>% 
+        toString()
+      
+      year <- yearList[j] %>% 
+        html_text() %>% 
+        toString()
+            
+      location <- hometownList[j] %>% 
+        html_text() %>% 
+        toString()
+      
+      athleteInfo <- tibble(sportYear = teamYearRoster,name = name,year = year, hometown = location,i)
+      macAthleteData<-rbind(macAthleteData, athleteInfo)
+    }
+  }
+  print(url)
+}
+write.csv(macAthleteData,"/Users/hannahsonsalla/Desktop/Math/DataScience/Project/macAthleteData.csv")
+```
+
+Clean MAC athlete data set
+
+Separate hometown into city, state and highschool columns.
+```{r}
+macAthleteData <- read.csv("/Users/hannahsonsalla/Desktop/Math/DataScience/Project/macAthleteData.csv")
+
+macAthleteDataClean <- macAthleteData %>% 
+  separate(hometown,c("citystate","highschool"),sep=" / ") %>% 
+  separate(citystate,c("city","state"),sep=", ")
+```
+
+Let's look at the cross country rosters and see how team size has changed over time.
+
+Filter for women cross country athletes
+```{r}
+macXC <-
+  macAthleteDataClean %>%
+  # filter for cross country
+  filter(grepl("Cross Country", sportYear))  %>%
+  #separate sportYear into academicYear and sport
+  separate(sportYear, into = c('academicYear', 'sport'), sep = 4) %>%
+  # add gender column
+  mutate(gender = ifelse(grepl("Women", sport), "Women", "Men")) %>%
+  # eliminate Macalester, Roster, Women's, Men's from sport column
+  mutate(sport = gsub("Macalester", "", sport)) %>%
+  mutate(sport = gsub("Roster", "", sport)) %>%
+  mutate(sport = gsub("Men's", "", sport), sport = gsub("Women's", "", sport))
+```
+
+Macaleser Cross Country Plot
+```{r}
+xcPlot <- ggplot(macXC, aes(x = academicYear)) + geom_bar(fill = "steelblue4") + theme(axis.text.x=element_text(angle=45,hjust=1)) + labs(y = "number of runners", x = "year", title = "Macalester College Cross Country", subtitle = "Men's and Women's Programs")
+
+xcPlot
+```
+
+
+Macaleser Cross Country Plot by Gender
+```{r}
+xcPlot2 <- ggplot(macXC, aes(x = academicYear)) + geom_bar(aes(fill = gender)) + theme(axis.text.x=element_text(angle=45,hjust=1)) + labs(y = "number of runners", x = "year", title = "Macalester College Cross Country", subtitle = "Men's and Women's Programs") + scale_fill_manual(values=c("chocolate", "steelblue4"))
+
+xcPlot2
+```
+
+Macaleser Women's Cross Country
+```{r}
+macWomenXC <- 
+  macXC %>%
+  filter(gender == "Women")
+```
+
+Plot of Team Size by Year
+```{r}
+xcPlot3 <- ggplot(macWomenXC, aes(x = academicYear)) + geom_bar(fill = "chocolate") +  theme(axis.text.x=element_text(angle=45,hjust=1)) + labs(y = "number of runners", x = "year", title = "Macalester College Women's Cross Country", subtitle = "Team Size by Year")
+
+xcPlot3
+```
+
+Plot by Class Year
+```{r}
+xcPlot4 <- ggplot(macWomenXC, aes(x = academicYear)) + geom_bar(aes(fill = year)) + theme(axis.text.x=element_text(angle=45,hjust=1)) + labs(y = "number of runners", x = "year", title = "Macalester College Women's Cross Country", subtitle = "Team Composition by Class Year", fill = "class year") + scale_fill_manual(values = c("red","salmon","steelblue1","steelblue4"))
+
+xcPlot4
+```
+
+
+Macaleser Men's Cross Country 
+```{r}
+macMenXC <- 
+  macXC %>%
+  filter(gender == "Men")
+```
+
+Plot of Team Size by Year
+```{r}
+xcPlot5 <- ggplot(macMenXC, aes(x = academicYear)) + geom_bar(fill = "steelblue4") +  theme(axis.text.x=element_text(angle=45,hjust=1)) + labs(y = "number of runners", x = "year", title = "Macalester College Men's Cross Country", subtitle = "Team Size by Year")
+
+xcPlot5
+```
+
+Plot by Class Year
+```{r}
+xcPlot6 <- ggplot(macMenXC, aes(x = academicYear)) + geom_bar(aes(fill = year)) + theme(axis.text.x=element_text(angle=45,hjust=1)) + labs(y = "number of runners", x = "year", title = "Macalester College Men's Cross Country", subtitle = "Team Composition by Class Year", fill = "class year") + scale_fill_manual(values = c("red","salmon","steelblue1","steelblue4"))
+
+xcPlot6
+```
+
+

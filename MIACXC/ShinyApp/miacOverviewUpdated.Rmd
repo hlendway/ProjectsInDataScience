@@ -1,0 +1,376 @@
+---
+title: "MIAC Cross Country"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+library(rvest)
+library(dplyr)
+library(magrittr)
+library(tidyverse)
+library(jsonlite)
+library(stringr)
+library(xml2)
+library(XML)
+library(rvest)
+library(tidyverse)
+library(httr)
+library(httpuv)
+library(RCurl)
+library(stringr)
+library(lubridate)
+```
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+minnesota_xc <- read.csv("./data/miacNoTime171104.csv")
+wisc_meets <- read_csv("./data/wiscMeets.csv")
+
+wisc_meets_no_time <-
+  wisc_meets %>% 
+  subset(select = - c(time)) %>% 
+  select(-X1) 
+
+minnesota_xc_clean <- 
+  minnesota_xc %>% 
+  select(-X) %>%
+  rbind(wisc_meets_no_time) 
+  
+```
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+miacSchools = c("Augsburg", "Bethel", "Carleton", "Concordia Moorhead", "Gustavus Adolphus", "Hamline", "Macalester", "St. Benedict", "St. Catherine", "St. John's", "Saint Mary's", "St. Olaf", "St. Thomas")
+
+miac_xc <-
+  minnesota_xc_clean %>% 
+  rbind(wisc_meets_no_time) %>% 
+  mutate(name = trimws(name, "both"), team = trimws(team, "both"), meet_name = trimws(meet_name, "both")) %>%
+  mutate(meet_year = as.character(meet_year)) %>% 
+  mutate(team = gsub("\xa0", NA, team)) %>%
+  mutate(team = ifelse(grepl("St Olaf", team), "St. Olaf", team)) %>%
+  mutate(team = ifelse(grepl("St Catherine", team), "St. Catherine", team)) %>%
+  mutate(team = ifelse(grepl("St Benedict", team), "St. Benedict", team)) %>%
+  mutate(team = ifelse(grepl("St Thomas", team), "St. Thomas", team)) %>%
+  mutate(team = ifelse(grepl("Saint John", team), "St. John's", team)) %>%
+  mutate(team = ifelse(grepl("St Olaf", team), "St. Olaf", team)) %>%
+  mutate(team = ifelse(grepl("Gustavus", team), "Gustavus Adolphus", team)) %>%
+  mutate(score = ifelse(score == "0", NA, score)) %>%
+  mutate(score = gsub("\xa0", NA, score)) %>%
+  mutate(class_year = as.character(class_year)) %>%
+  mutate(class_year = gsub("\xa0", NA, class_year)) %>%
+  mutate(class_year = substr(class_year,1,2),
+         class_year = as.factor(toupper(class_year)),
+         meet_name = ifelse((grepl("MIAC",meet_name)),"Minnesota Intercollegiate Championships",as.character(meet_name))) %>% 
+  #MIAC 2013 women has kilometers 8, needs kilometers 6
+  mutate(meet_kilometers = ifelse(meet_name == "Minnesota Intercollegiate Championships" & race_group == "Women", 6, meet_kilometers)) %>% 
+  filter(team %in% miacSchools) 
+```
+
+# MIAC Conference Times
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+miac_xc_model_set <-
+  miac_xc %>%
+  filter(meet_kilometers==8 & race_group == "Men" | meet_kilometers==6 & race_group == "Women") %>%
+  select(name,meet_name,meet_year,new_time,race_group,class_year,team) %>%
+  group_by(name,meet_name,meet_year,class_year,race_group) %>%
+  distinct(name,meet_name,meet_year,class_year,race_group, .keep_all= TRUE) %>%
+  spread(meet_name,new_time,fill="") %>%
+  unite("times",c(6:15,18:34),sep=",",remove=TRUE) %>%
+  mutate(times = gsub("(,,*)",",",times), times = gsub("^,*|,*$","",times)) %>%
+  separate(times,c("meet1","meet2","meet3"),sep=",",remove = TRUE, extra = "drop") %>%
+  filter(! meet1 == "") %>% 
+  mutate(meet3 = ifelse((is.na(meet2)),meet1,meet3), meet2 = ifelse((is.na(meet2)),meet1,meet2)) %>%
+  mutate(meet1=as.numeric(meet1),
+         meet2=as.numeric(meet2),
+         meet3 = ifelse((is.na(meet3)),((meet1+meet2)/2),as.numeric(meet3))) %>%
+  filter(`Minnesota Intercollegiate Championships`!="") %>%
+  rename(Minnesota.Intercollegiate.Championships=`Minnesota Intercollegiate Championships`) %>%
+  mutate(Minnesota.Intercollegiate.Championships = as.numeric(Minnesota.Intercollegiate.Championships))
+```
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+#Add time buckets
+miac_xc_model_set2 <-
+  miac_xc_model_set %>% 
+  mutate(MIACTimeCat=cut(Minnesota.Intercollegiate.Championships, breaks=seq(20,44,by=2))) %>%
+  ungroup()
+```
+
+### What are typical times for men and women runners at MIAC Conference?
+We wanted to determine the relationship between MIAC Conference time and gender to get a general sense of what time most runners complete the conference course in.
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+ggplot(miac_xc_model_set2, aes(x = race_group, fill = MIACTimeCat)) + geom_bar(position = "fill") + labs(x = "Gender", y = "Percentage", title = "MIAC Championship Time Ranges for Runners", fill = "MIAC Championship Time")
+```
+
+This plot indicates that most men ran the 8k MIAC Championship race between 28 - 30 minutes or between 26 - 28 minutes.  Most women finished the 6k race between 24 and 26 minutes.
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+MIACMenTime <-
+  miac_xc_model_set2 %>%
+  filter(race_group == "Men")
+
+MIACWomenTime <-
+  miac_xc_model_set2 %>% 
+  filter(race_group == "Women")
+```
+
+### How have men's finish times changed from year to year?
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+ggplot(MIACMenTime, aes(x = race_group, fill = MIACTimeCat)) + geom_bar(position = "fill") + facet_grid(.~ meet_year) + labs(x = "Gender", y = "Percentage", title = "MIAC Championship Time Ranges for Men", fill = "MIAC Championship Time")
+```
+
+This plot shows that there was an increase in the number of men finishing slower than 30 minutes from 2012 to 2015 for the MIAC Championship race.  From 2015 to 2017 there is a decreasing trend for this same time range.  This means that in general race times increased and became slower from 2012 to 2015 and that after 2015 race times have decreased and became faster.  It is interesting to observe that the fastest time range (24 - 26 minutes) is most present in years 2012, 2013 and 2014.  There have not been as many runners completing the conference race within this range in recent years.  From the plot, we found that the fastest year for the men's conference meet was in 2012.  
+
+### How have women's finish times changed from year to year?
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+ggplot(MIACWomenTime, aes(x = race_group, fill = MIACTimeCat)) + geom_bar(position = "fill") + facet_grid(.~ meet_year) + labs(x = "Gender", y = "Percentage", title = "MIAC Championship Time Ranges for Women", fill = "MIAC Championship Time")
+```
+
+The women's MIAC Championship times appear to have increasing and decreasing times from year to year.  From 2012 to 2013, women ran slower as the number of women running over 28 minutes increased.  However, from 2013 to 2014, times became faster with the number of women running over 28 minutes dropping about 5% from the previous year.  We then see an uphill trend of increasing slower times from 2014 to 2016.  Lastly, we find that times decreased and became faster in 2017.  From this plot, we can conclude that in general in 2014 women had the fastest conference times.      
+
+# MIAC Cross Country Team Size
+Let's look at team size both cumulatively and by year for each school in the MIAC.
+
+## Men Team Size
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+miac_team_size_men <-
+  miac_xc %>%
+  filter(race_group == "Men") %>%  
+  distinct(name, meet_year, class_year, team)
+
+miac_team_size_men_sum <-
+  miac_team_size_men %>%
+  group_by(team, meet_year) %>% 
+  summarise(count = n())
+```
+
+### Which school has attracted the most male runners?
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+team_size_men_plot1 <- ggplot(miac_team_size_men, aes(team)) + geom_bar(aes(fill = meet_year)) + labs(title = "MIAC Men Cross Country Team Size", subtitle = "Years 2012 - 2017", x = "College/University",  y = "number of runners", fill = "year") +  theme(axis.text.x=element_text(angle=45,hjust=1)) + scale_fill_manual(values = c("red","salmon", "pink","slategray1", "steelblue1","steelblue4"))
+
+team_size_men_plot1
+```
+
+We see that St. Olaf followed closely by St. John's and then St. Thomas have had the most male cross country runners in their programs from 2012 - 2017. 
+
+### Which schools have largest men teams each year?
+```{r,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+team_size_plot_men2 <- ggplot(miac_team_size_men, aes(team)) + geom_bar(aes(fill = meet_year), position = "dodge") + labs(title = "MIAC Men Cross Country Team Size", subtitle = "Years 2012 - 2017", x = "College/University",  y = "number of runners", fill = "year") +  theme(axis.text.x=element_text(angle=45,hjust=1)) + scale_fill_manual(values = c("red","salmon", "pink","slategray1", "steelblue1","steelblue4"))
+
+team_size_plot_men2
+```
+
+Here are the top three largest men cross country teams in the MIAC by year:
+
+* 2017: St. Olaf, Concordia Moorhead, St. John's
+* 2016: St. Thomas, Gustavus Adolphus, St. Olaf
+* 2015: St. Olaf, St. Thomas, St. John's
+* 2014: St. John's, St. Olaf, Carleton
+* 2013: St. John's, St. Olaf, St. Thomas
+* 2012: St. John's, St. Olaf, Carleton
+
+## Women Team Size
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+miac_team_size_women <-
+  miac_xc %>%
+  filter(race_group == "Women") %>% 
+  distinct(name, meet_year, class_year, team)
+
+miac_team_size_women_sum <-
+  miac_team_size_women %>%
+  group_by(team, meet_year) %>% 
+  summarise(count = n())
+```
+
+### Which school has attracted the most female runners?
+```{r,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+team_size_women_plot1 <- ggplot(miac_team_size_women, aes(team)) + geom_bar(aes(fill = meet_year)) + labs(title = "MIAC Women Cross Country Team Size", subtitle = "Years 2012 - 2017", x = "College/University",  y = "number of runners", fill = "year") +  theme(axis.text.x=element_text(angle=45,hjust=1)) + scale_fill_manual(values = c("red","salmon", "pink","slategray1", "steelblue1","steelblue4"))
+
+team_size_women_plot1
+```
+
+We found that St. Olaf has had the most female cross country runners in their programs from 2012 - 2017.  Macalester, St. Benedict and Concordia Moorhead come in second, third and fourth for most cumulative female runners in the MIAC. 
+
+### Which schools have largest women teams each year?
+```{r,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+team_size_women_plot2 <- ggplot(miac_team_size_women, aes(team)) + geom_bar(aes(fill = meet_year), position = "dodge") + labs(title = "MIAC Women Cross Country Team Size", subtitle = "Years 2012 - 2017", x = "College/University",  y = "number of runners", fill = "year") +  theme(axis.text.x=element_text(angle=45,hjust=1)) + scale_fill_manual(values = c("red","salmon", "pink","slategray1", "steelblue1","steelblue4"))
+
+team_size_women_plot2
+```
+
+Here are the top three largest women cross country teams in the MIAC by year:
+
+* 2017: St. Olaf, Macalester, St. Thomas
+* 2016: Macalester, Gustavus Adolphus, St. Olaf
+* 2015: Macalester, St. Benedict, St. Olaf
+* 2014: St. Benedict, St. Olaf, Carleton
+* 2013: St. Olaf, Concordia Moorhead, St. Benedict
+* 2012: St. Olaf, Macalester, Gustavus Adolphus
+
+
+# MIAC Courses and Meets
+We explored the range of times (minutes per mile) for each meet in 2017 as well as the mean time.  The following plots indicate which courses and meets were more difficult as harder meets will have a higher mean time and slower average miles.
+
+## Men 2017 Meets
+### What were the easiest and hardest meets of 2017 for men?
+```{r,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+miac_men_courses_2017 <-
+  miac_xc %>% 
+  filter(race_group == "Men") %>%
+  filter(meet_year == 2017) %>%
+  separate(avg_mile, c("mile_minutes", "mile_seconds"), sep = ":", remove = FALSE) %>% 
+  mutate(new_mile = as.numeric(mile_minutes) + (as.numeric(mile_seconds)/60)) %>% 
+  mutate(meet_name = gsub("Cross Country Championships", "", meet_name)) %>% 
+  filter(new_mile != "")
+
+miac_men_courses_2017$meet_name <- factor(miac_men_courses_2017$meet_name, levels = miac_men_courses_2017$meet_name[order(miac_men_courses_2017$meet_date)])
+```
+
+```{r,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+men_courses_2017_plot <- ggplot(miac_men_courses_2017, aes(x = meet_name, y = new_mile)) + geom_point(alpha = 1/10) + geom_boxplot() + labs(title = "MIAC Men Cross Country Meets 2017", x = "meets",  y = "average mile (minutes)") +  theme(axis.text.x=element_text(angle=45,hjust=1))
+
+men_courses_2017_plot
+```
+
+According to this plot, we can say that in 2017 the Cobber Invite and St. Kates Invite were two of the easier meets as the range and mean of average mile times for both of these is quite low.  The hardest meets in 2017 were the MSU-Moorhead-Dragon Twilight and Roy Griak Invitational.  
+
+## Women 2017 Meets
+### What were the easiest and hardest meets of 2017 for women?
+```{r,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+miac_women_courses_2017 <-
+  miac_xc %>% 
+  filter(race_group == "Women") %>%
+  filter(meet_year == 2017) %>%
+  separate(avg_mile, c("mile_minutes", "mile_seconds"), sep = ":", remove = FALSE) %>% 
+  mutate(new_mile = as.numeric(mile_minutes) + (as.numeric(mile_seconds)/60)) %>% 
+  mutate(meet_name = gsub("Cross Country Championships", "", meet_name))
+
+miac_women_courses_2017$meet_name <- factor(miac_women_courses_2017$meet_name, levels = miac_women_courses_2017$meet_name[order(miac_women_courses_2017$meet_date)])
+```
+
+```{r,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+women_courses_2017_plot <- ggplot(miac_women_courses_2017, aes(x = meet_name, y = new_time)) + geom_point(alpha = 1/10) + geom_boxplot() + labs(title = "MIAC Women Cross Country Meets 2017", x = "meets",  y = "average time (minutes)") +  theme(axis.text.x=element_text(angle=45,hjust=1))
+
+women_courses_2017_plot
+```
+
+The easiest meets in 2017 for women were St. Kates, Crown College Invite and Cobber Invite.  The hardest meets in 2017 were the BLC Viking Invitational and Roy Griak Invitational.
+
+# MIAC Class Year
+
+###What is the Average Class Size by School Year?
+We were interested in looking at make up of a team by class year. You can see the number of athletes per class year typically drops from freshman to senior year.  Since students typically study abroad their junior year, we expect the most significant drop to happen from sophomore to junior year, which you can see in the graphs below.  We suspect many athletes that opt out of sports for study aborad their junior year typically don't return their senior year so we continue to see a drop in athlete count versus more seniors returning.  
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+avgClassSize <- 
+  miac_xc %>% 
+  mutate(class_year = substr(class_year,1,2)) %>% 
+  #mutate(class_year = ifelse(!is.na(class_year), substr(class_year,1,2), class_year)) %>%  
+  filter(class_year %in% c("FR","SO","JR","SR")) %>% 
+  group_by(class_year, race_group,meet_year) %>% 
+  select(name,class_year,race_group,meet_year) %>% 
+  distinct() %>% 
+  summarise(classSize = n())
+
+avgClassSize %>% 
+  filter(race_group=="Women") %>% 
+  ggplot(aes(meet_year,classSize,group=class_year,color=class_year)) +
+  geom_line(size=1) +
+  geom_point() +
+  labs(title="Number of Women Racing in the MIAC by Class Year") +
+  xlab("Year") +
+  ylab("Numer of Athletes") +
+  guides(color=guide_legend(title="Class Year"))
+
+```
+
+```{r,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+avgClassSize %>% 
+  filter(race_group=="Men") %>% 
+  ggplot(aes(meet_year,classSize,group=class_year,color=class_year)) +
+  geom_line(size=1) +
+  geom_point() +
+  labs(title="Number of Men Racing in the MIAC by Class Year") +
+  xlab("Year") +
+  ylab("Numer of Athletes") +
+  guides(color=guide_legend(title="Class Year"))
+```
+
+###What is the Average Time at MIAC Championships by Class Year?
+We wanted to look into whether or not athletes typically improve over the course of their college career. Here we are looking to see if on average seniors are the fastest and freshman are the slowest.  
+```{r,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+avgTimesByClass <- 
+  miac_xc %>% 
+  filter(grepl("Minnesota Intercollegiate Championships", meet_name)) %>%
+  mutate(class_year = substr(class_year,1,2)) %>% 
+  filter(class_year %in% c("FR","SO","JR","SR")) %>% 
+  mutate(class_year = factor(class_year,levels=c("FR","SO","JR","SR"))) %>% 
+  group_by(meet_year,class_year,meet_kilometers,race_group) %>% 
+  summarise(averageTime = mean(new_time),
+            athleteCount = n()) 
+
+avgTimesByClass %>% 
+  filter(race_group=="Women") %>% 
+  ggplot(aes(meet_year,averageTime,color=class_year,group=class_year)) +
+  geom_point(size=2) +
+  geom_line(size=1) +
+  labs(title="Women MIAC Championships Average Time by Class Year") + 
+  xlab("Year") +
+  ylab("Average Time") +
+  guides(color=guide_legend(title="Class Year"))
+```
+
+```{r,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+avgTimesByClass %>% 
+  filter(race_group=="Men") %>% 
+  ggplot(aes(meet_year,averageTime,color=class_year,group=class_year)) +
+  geom_point(size=2) +
+  geom_line(size=1) +
+  labs(title="Men MIAC Championships Average Time by Class Year") + 
+  xlab("Year") +
+  ylab("Average Time") +
+  guides(color=guide_legend(title="Class Year"))
+```
+
+
+###What are the Average Times by Class Year for Four Year Athletes?
+We were curious to look at times for athletes that competed all four years with the thought that they performed more consistenly competing year after year and remaining uninjured. Unfortunately, we have limited data so we cannot paint the same picture, but it seems that with a larger data set we may make a different conclusion for four year athletes.  
+```{r,width=14,height=10,echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+
+avgTimesByClassFourYearAthletes <- miac_xc %>% 
+  filter(grepl("Minnesota Intercollegiate Championships", meet_name)) %>%
+  mutate(class_year = substr(class_year,1,2)) %>% 
+  filter(class_year %in% c("FR","SO","JR","SR")) %>% 
+  mutate(class_year = factor(class_year,levels=c("FR","SO","JR","SR"))) %>%
+  group_by(name) %>% 
+  filter(n()>3) %>% 
+  ungroup() %>% 
+  group_by(meet_year,class_year,meet_kilometers,race_group) %>% 
+  filter(meet_kilometers==6|meet_kilometers==8) %>% 
+  summarise(averageTime = mean(new_time),
+            athleteCount = n()) 
+
+avgTimesByClassFourYearAthletes %>% 
+  filter(race_group=="Women") %>% 
+  ggplot(aes(meet_year,averageTime,color=class_year,group=class_year)) +
+  geom_point(size=2) +
+  geom_line(size=1) +
+  labs(title="Women MIAC Championships Average Time by Class Year") + 
+  xlab("Year") +
+  ylab("Average Time") +
+  guides(color=guide_legend(title="Class Year"))
+```
+
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+avgTimesByClassFourYearAthletes %>% 
+  filter(race_group=="Men") %>% 
+  ggplot(aes(meet_year,averageTime,color=class_year,group=class_year)) +
+  geom_point(size=2) +
+  geom_line(size=1) +
+  labs(title="Men MIAC Championships Average Time by Class Year") + 
+  xlab("Year") +
+  ylab("Average Time") +
+  guides(color=guide_legend(title="Class Year"))
+```

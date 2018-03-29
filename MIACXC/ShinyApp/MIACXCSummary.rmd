@@ -1,0 +1,54 @@
+---
+title: "MIAC Cross Country Summary"
+author: "Heather Lendway and Hannah Sonsalla"
+output: html_document
+---
+
+## Background 
+The Minnesota Intercollegiate Athletic Conference (MIAC) is a college athletic conference that competes in NCAA Division III. The 13 member schools include: Augsburg University, Bethel University, Carleton College, Concordia College, Gustavus Adolphus College, Hamline University, Macalester College, College of Saint Benedict, St. Catherine University, Saint John's University, Saint Mary's University, St. Olaf College, and University of St. Thomas. All of these schools are located in Minnesota and are private institutions.  
+
+This app was built as a resource for cross country coaches and running nerds alike.  We scraped data for all Minnesota meets as well as a couple meets from Wisconsin from tfrrs.org (Track and Field Results Reporting System) for 2012 - 2017 seasons.  After much cleaning and rearranging of the data, we were able to explore and investigate the performance of both teams and individuals.  In the end, we came up with some pretty neat and helpful plots that we are sure will be of much interest to MIAC Cross Country running fanatics.
+
+## Runner Progression 
+Runner progression includes pages for both team progression and individual progression. Both of these display how team and individual times change throughout the season.  
+
+### Team Progression 
+This tab allows you to compare team progress to individual progress for a given team and season.  Teams, seasons (years) and runners can be selected using the dropdowns located at the top of the page.  The left plot shows how each individual performed throughout the season based on minutes per kilometer.  Each line represents a single individual throughout the season.  On the right, there is a plot of the selected individual's time progression for the season.  These side by side plots allow you to determine whether the selected individual followed the general team trend.  
+
+### Individual Progression 
+The individual runner progression tab allows you to see how an individual has performed at a particular meet in terms of time and place over their careers.  Begin by choosing a team, athlete and meet.  The top plot will show the time of the runner for each year they ran at that particular meet.  The bottom plot shows how the runner placed at that meet each year.  This tab is particularly useful for coaches wanting to share with their athletes their performance from one year to the next, or from freshmen year to senior year.
+
+## Conference Awards 
+The conference awards tab displays the range of times that lead runners to earning honors including Champion, All Conference or Honorable Mention each year.  In the MIAC, the champion is the first place finisher.  All Conference honors go to the top 15 individiuals and Honorable Mention are given to finishers that place 16 through 25.  Hovering over a point will show the place, name, school, and time of a runner.  The larger sized points indicate the cutoff for each honor (Champion  - 1, All Conference - 15, Honorable Mention-25).  Additionally, this plot can be filtered by gender and team.
+
+## Top Times 
+Our top times tab includes an interactive plot displaying the top ten fastest times from various meets.  Hovering over a point will give a runner's name, school, time and the year the time was run.  This plot can be filtered by both gender and team.  
+
+## Team Rankings 
+The team rankings tab contains two different pages: MIAC Men Team Rankings and MIAC Women Team Rankings.  Each page diplays a plot that shows how each team placed at MIAC Conference for 2012-2017.  A table with teams, year, rank and score is located on the left side of the page.  To see the ranking of a particular team, simply select a team from the dropdown.  Some highlights include on the men's side, St. Olaf consistently placing in the top two teams at conference.  Their team has been quite dominant in recent years, and placed first from 2012-2016 and second in 2017 (beat out by Carleton).  On the women's side, Carleton and St. Olaf are two teams that have placed third or better from 2012 to 2017.  Carleton won conference in 2013-2015 and just this year 2017.
+
+## Predictions 
+Models include linear, regression tree and random forest. These models were trained using 2012 - 2016 MIAC Cross Country data with predictor variables being a runner's gender, class year and three best finish times for the season (meet1, meet2, meet3).  Although a fair amount of runners ran three races excluding conference, some did not. For those runners with only one prior race time, we carried this race time over for the second and third races.  For runners with two prior race times, we took an average to obtain a third race time.  Individual finish time predictions were generated based off of 2017 MIAC Cross Country data.  From these individual time predictions, individuals were then assigned places.  We scored individuals and summed their scores to achieve team rankings.
+
+We include both team predictions as well as individual predictions.  Team predictions display a plot of the model superimposed on top the 2012-2016 data as well as a table that has predicted team scores and ranks for 2017 MIAC Championships.  The individual rankings page consists of a datatable.  This datatable includes the predicted place, real place, name, team, class year, predicted time, real time and time difference for an athlete that competed at conference in 2017.  This allows you to see the difference between our predicted places and times and how athletes actually performed at conference.  We want to point out that both linear models for men and women correctly predicted the winners of the 2017 conference meet: Donson Cook-Gallardo and Meg Mathison!    
+
+## More 
+Under the more tab you will find additional plots corresponding to categories and questions we explored.  Below is a list of categories and related questions. 
+
+* MIAC Conference Times
+    + What are typical times for men and women runners at MIAC Conference?
+    + How have men’s finish times changed from year to year?
+    + How have women’s finish times changed from year to year?
+* MIAC Cross Country Team Size
+    + Which school has attracted the most male runners?
+    + Which schools have largest men teams each year?
+    + Which school has attracted the most female runners?
+    + Which schools have largest women teams each year?
+* MIAC Courses and Meets
+    + What were the easiest and hardest meets/courses of 2017 for men?
+    + What were the easiest and hardest meets/courses of 2017 for women?
+* MIAC Class Year
+    + What is the Average Class Size by School Year?
+    + What is the Average Time at MIAC Championships by Class Year?
+    + What are the Average Times by Class Year for Four Year Athletes?
+

@@ -1,0 +1,505 @@
+---
+title: 'MIAC Women XC Rivalry: Northfield’s Knights and Oles Remain On Top'
+author: "Heather Lendway and Hannah Sonsalla"
+output:
+  prettydoc::html_pretty:
+    highlight: vignette
+    theme: cayman
+  bookdown::tufte_html2:
+    number_sections: no
+    split_by: none
+    toc: no
+  bookdown::html_document2:
+    number_sections: no
+    split_by: none
+    toc: yes
+    toc_float:
+      collapsed: yes
+  rmarkdown::html_document:
+    highlight: espresso
+    theme: lumen
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rvest)
+library(dplyr)
+library(magrittr)
+library(tidyverse)
+library(jsonlite)
+library(stringr)
+library(xml2)
+library(XML)
+library(rvest)
+library(tidyverse)
+library(httr)
+library(httpuv)
+library(RCurl)
+library(stringr)
+library(lubridate)
+library(tree)
+library(randomForest)
+library(knitr)
+library(kableExtra)
+library(plotly)
+```
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+minnesota_xc <- read.csv("./data/miacNoTime171104.csv")
+wisc_meets <- read_csv("./data/wiscMeets.csv")
+
+wisc_meets_no_time <-
+  wisc_meets %>% 
+  subset(select = - c(time)) %>% 
+  select(-X1) 
+
+minnesota_xc_clean <- 
+  minnesota_xc %>% 
+  select(-X) %>%
+  rbind(wisc_meets_no_time) 
+
+miacSchools = c("Augsburg", "Bethel", "Carleton", "Concordia Moorhead", "Gustavus Adolphus", "Hamline", "Macalester", "St. Benedict", "St. Catherine", "St. John's", "Saint Mary's", "St. Olaf", "St. Thomas")
+
+miac_xc <-
+  minnesota_xc_clean %>% 
+  rbind(wisc_meets_no_time) %>% 
+  mutate(name = trimws(name, "both"), team = trimws(team, "both"), meet_name = trimws(meet_name, "both")) %>%
+  mutate(meet_year = as.character(meet_year)) %>% 
+  mutate(team = gsub("\xa0", NA, team)) %>%
+  mutate(team = ifelse(grepl("St Olaf", team), "St. Olaf", team)) %>%
+  mutate(team = ifelse(grepl("St Catherine", team), "St. Catherine", team)) %>%
+  mutate(team = ifelse(grepl("St Benedict", team), "St. Benedict", team)) %>%
+  mutate(team = ifelse(grepl("St Thomas", team), "St. Thomas", team)) %>%
+  mutate(team = ifelse(grepl("Saint John", team), "St. John's", team)) %>%
+  mutate(team = ifelse(grepl("St Olaf", team), "St. Olaf", team)) %>%
+  mutate(team = ifelse(grepl("Gustavus", team), "Gustavus Adolphus", team)) %>%
+  mutate(score = ifelse(score == "0", NA, score)) %>%
+  mutate(score = gsub("\xa0", NA, score)) %>%
+  mutate(class_year = as.character(class_year)) %>%
+  mutate(class_year = gsub("\xa0", NA, class_year)) %>%
+  mutate(class_year = substr(class_year,1,2),
+         class_year = as.factor(toupper(class_year)),
+         meet_name = ifelse((grepl("MIAC",meet_name)),"Minnesota Intercollegiate Championships",as.character(meet_name))) %>% 
+  #MIAC 2013 women has kilometers 8, needs kilometers 6
+  mutate(meet_kilometers = ifelse(meet_name == "Minnesota Intercollegiate Championships" & race_group == "Women", 6, meet_kilometers)) %>% 
+  filter(team %in% miacSchools) 
+
+```
+
+DEC. 19, 2017 AT 2:44 PM
+
+A lot of things have to align just right for a cross country team to be consistently good year after year.  Ideally all runners would remain injury free and study abroad in the spring, and graduating seniors would be replaced by similarly performing freshmen.  But we all know this is not the case.  Teams are constantly plagued by injury from high mileage and recruiting collegiate athletes is much more difficult than it appears.  Glancing over performance stats meet by meet only gives you a glimpse at a team’s ability.  We wanted to determine the performance potential of all schools within the Minnesota Intercollegiate Athletic Conference (MIAC), a college athletic conference that competes in NCAA Division III. 
+
+Sure, we know which schools are bound to excel in sports, but we wanted to go the distance and find out what could be learned from the cross country teams themselves: their sizes and their rankings at the conference meet.  We embarked on a course to predict the order that individuals and teams would finish at the 2017 MIAC meet.  This called for a look into past and current cross country statistics data.
+
+We consulted TFRRS (Track & Field Race Reporting System) for our meet data.  In our opinion, TFRRS is the one of the best Track and Field and Cross Country results database for the NCAA currently out there.  For each meet, TFRRS reports individual finish times and places, and team rankings.  Unfortunately, this website only has results going back to 2012 for Minnesota cross country.  We ventured forward using this somewhat limited timeframe and collected results from roughly 90 Minnesota meets.  To enlarge our dataset further, we also threw in two popular Wisconsin meets (UW La Crosse Jim Drews/Tori Neubauer Invite and Bluegold Invite) that several MIAC schools attend each year.  Here’s what we found.
+
+# *Which schools attract the most female cross country runners?*
+
+Obviously St. Thomas since their school has a student population almost four times as large as the other schools - 
+
+Just kidding.  Thankfully, school size does not always correspond to larger team sizes.  Runners tend to navigate towards schools that meet all of their academic and athletic requirements.  Athletically speaking, schools must have supportive coaching staff, positive team atmosphere and provide opportunities to better their student athletes. 
+
+We took all of the female MIAC runners that competed each year and compared them by team.  The three largest teams in 2017 turned out to be St. Olaf, Macalester, and St. Thomas with team sizes of 36, 33 and 30 runners.  Although St. Olaf’s team has become smaller in recent years - they began with 60 athletes in 2012 - they still have the largest women’s team in the MIAC.  St. Olaf has also earned the recognition of having the most number of runners - 260- compete in their program from 2012 to 2017.  Macalester follows close behind in second with 238 runners.  
+
+It would appear that St. Olaf and Macalester have and will continue to maintain the largest female cross country teams in the conference:
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+miac_team_size_women <-
+  miac_xc %>%
+  filter(race_group == "Women") %>% 
+  distinct(name, meet_year, class_year, team) %>% 
+  group_by(meet_year, team) %>% 
+  summarise(size = n())
+
+miac_team_size_women_plot <- 
+  ggplot(miac_team_size_women, aes(x = team, y = size)) + 
+  geom_col(aes(fill = meet_year, text=paste("Team: ", team, "\n Year: ", meet_year,"\n Size: ",size)), position = "dodge") + 
+  labs(title = "MIAC Women Cross Country Team Size <br> Years 2012 - 2017", 
+       x = "College/University",  y = "Number of Runners", fill = "Year") +  
+  theme(axis.text.x=element_text(angle=45,hjust=1)) + 
+  scale_fill_manual(values = c("red","salmon", "pink","slategray1", "steelblue1","steelblue4")) 
+
+ggplotly(p = miac_team_size_women_plot,tooltip=c("text"))
+
+```
+
+# *What teams have consistently done well at conference?*
+
+The Carleton Knights and the St. Olaf Oles have dominated the conference meet in recent years.  Neither of the Northfield powerhouses have finished below third place in the last six MIAC championship meets.  Most notably, Carleton won three conference championships in a row (2013 - 2015) and they have been team champions four of the last six seasons.  The St. Olaf women have also been quite impressive as they have placed second in four of the six championships.  St. Thomas has made a name for themselves among the cross country community by gradually improving their place at conference from 6th place in 2013 to winning the meet in 2016.  These three teams will be the ones to watch in upcoming years.
+
+Teams on the bottom tier include St. Mary’s and Augsburg.  St. Mary’s has occupied the final spot or second to last spot in the MIAC standings each year.  Augsburg has been on a steady decline since their peak in 2014 in which they placed 8th.  This season they finished last out of the women’s teams in 12th place.  St. Mary’s constant position at the bottom of the MIAC and Augsburg’s plummet may be related to their small team sizes and lack of individual standouts.  
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+
+miac_women_team_placings <-
+  miac_xc %>%
+  filter(grepl("Minnesota Intercollegiate Championships", meet_name)) %>%
+  filter(race_group == "Women") %>%
+  mutate(score = as.numeric(score)) %>%
+  filter(!is.na(score)) %>%
+  group_by(team, meet_year) %>%
+  top_n(n = -5, wt = score) %>% 
+  summarise(team_score = sum(score)) %>%
+  group_by(meet_year) %>%
+  arrange(team_score, desc(team)) %>%
+  mutate(team_rank = row_number()) %>%
+  arrange(meet_year)
+
+miac_women_team_placings_plot <-
+  ggplot(miac_women_team_placings, aes(x = meet_year, y = team_rank, group = team)) + 
+  geom_point(aes(color = team, text=paste("Team: ", team, "\n Year: ", meet_year, "\n Place: ",team_rank, "\n Score: ",team_score)), size = 2) + 
+  geom_line(aes(color = team)) + 
+  labs(title = "MIAC Women Team Placings <br> Years 2012 - 2017", x = "Year",  y = "Team Rank", color="Team") + 
+  scale_color_manual(values=c("palevioletred1", "violetred1", "red", "darkorange2", "goldenrod", "green1", "green4", "turquoise", "blue", "steelblue4", "purple", "slategrey")) 
+
+ggplotly(p = miac_women_team_placings_plot,tooltip=c("text"))
+```
+
+
+
+# *How did predictions for teams at 2017 MIAC Championship hold up?*
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+# predictions data set
+# if only ran one race - carry race times from meet1 to meet 2 and meet3
+# if ran two races - average meet1 and meet2 times for meet3
+
+miac_2017_results <-
+  miac_xc %>% 
+  filter(meet_year == 2017, meet_name == "Minnesota Intercollegiate Championships") %>% 
+  select(name, place, new_time) %>% 
+  rename('real_minutes' = new_time, 'real_place'= place)
+
+miac_women_team_placings_2017 <-
+  miac_xc %>%
+  filter(grepl("Minnesota Intercollegiate Championships", meet_name)) %>% 
+  filter(race_group == "Women", meet_year == 2017) %>%
+  mutate(score = as.numeric(score)) %>% 
+  filter(!is.na(score)) %>%
+  group_by(team, meet_year) %>%
+  top_n(n = -5, wt = score) %>%
+  summarise(team_score = sum(score)) %>% 
+  group_by(meet_year) %>%
+  arrange(team_score, desc(team)) %>%
+  mutate(team_rank = row_number()) %>%
+  arrange(meet_year) %>% 
+  rename("real_score"="team_score") %>%
+  rename("real_rank"="team_rank") 
+
+miac_men_team_placings_2017 <-
+  miac_xc %>%
+  filter(grepl("Minnesota Intercollegiate Championships", meet_name)) %>% 
+  filter(race_group == "Men", meet_year == 2017) %>%
+  mutate(score = as.numeric(score)) %>% 
+  filter(!is.na(score)) %>%
+  group_by(team, meet_year) %>%
+  top_n(n = -5, wt = score) %>%
+  summarise(team_score = sum(score)) %>% 
+  group_by(meet_year) %>%
+  arrange(team_score, desc(team)) %>%
+  mutate(team_rank = row_number()) %>%
+  arrange(meet_year) %>% 
+  rename("real_score"="team_score") %>%
+  rename("real_rank"="team_rank") 
+
+miac_xc_model_set <-
+  miac_xc %>%
+  filter(meet_kilometers==8 & race_group == "Men" | meet_kilometers==6 & race_group == "Women") %>%
+  select(name,meet_name,meet_year,new_time,race_group,class_year,team) %>%
+  group_by(name,meet_name,meet_year,class_year,race_group) %>%
+  distinct(name,meet_name,meet_year,class_year,race_group, .keep_all= TRUE) %>%
+  spread(meet_name,new_time,fill="") %>%
+  unite("times",c(6:15,18:34),sep=",",remove=TRUE) %>%
+  mutate(times = gsub("(,,*)",",",times), times = gsub("^,*|,*$","",times)) %>%
+  separate(times,c("meet1","meet2","meet3","meet4","meet5"),sep=",",remove = TRUE, extra = "drop") %>% 
+  select(-`NCAA Division III Central Region Cross Country Championships`) %>% 
+  gather("meet","time",meet1,meet2,meet3,meet4,meet5) %>% 
+  group_by(name,meet_year,class_year,race_group) %>%
+  arrange(name,meet_year,class_year,race_group,time) %>% 
+  select(-meet) %>% 
+  mutate(meet = paste0("meet",row_number())) %>% 
+  spread(meet,time) %>%
+  select(-meet4, -meet5) %>%
+  select(-`Minnesota Intercollegiate Championships`, everything()) %>% 
+  filter(! meet1 == "") %>% 
+  mutate(meet3 = ifelse((is.na(meet2)),meet1,meet3), meet2 = ifelse((is.na(meet2)),meet1,meet2)) %>%
+  mutate(meet1=as.numeric(meet1),
+         meet2=as.numeric(meet2),
+         meet3 = ifelse((is.na(meet3)),((meet1+meet2)/2),as.numeric(meet3))) %>%
+  filter(`Minnesota Intercollegiate Championships`!="") %>%
+  rename(Minnesota.Intercollegiate.Championships=`Minnesota Intercollegiate Championships`) %>%
+  mutate(Minnesota.Intercollegiate.Championships = as.numeric(Minnesota.Intercollegiate.Championships))
+
+# predictions train, test
+RunnersTest <- 
+  miac_xc_model_set %>% 
+  filter(meet_year == 2017)
+RunnersTrain <- dplyr::setdiff(miac_xc_model_set, RunnersTest)
+
+# models: linear, regression tree, random forest
+lm <- lm(Minnesota.Intercollegiate.Championships ~ race_group+class_year+meet1+meet2+meet3, RunnersTrain)
+tree <- tree(Minnesota.Intercollegiate.Championships ~ race_group+class_year+meet1+meet2+meet3, RunnersTrain)
+forest <- randomForest(Minnesota.Intercollegiate.Championships ~ race_group+class_year+meet1+meet2+meet3, RunnersTrain)
+
+# predict MIAC times for runners in RunnersTrain
+lmtrain <- predict(lm, RunnersTrain)
+treetrain <- predict(tree, RunnersTrain)
+foresttrain <- predict(forest, RunnersTrain)
+
+RunnersTrain <- RunnersTrain %>% 
+  cbind(lmTrain = lmtrain, treeTrain = treetrain, forestTrain = foresttrain) 
+
+# predict MIAC times for runners in RunnersTest
+lmtest <- predict(lm, RunnersTest)
+treetest <- predict(tree, RunnersTest)
+foresttest <- predict(forest, RunnersTest)
+
+TestResults <- RunnersTest %>% 
+  dplyr::select(c(name, team, meet_year, race_group, class_year, meet1, meet2, meet3, Minnesota.Intercollegiate.Championships)) %>% 
+  cbind(lmTest = lmtest) %>% 
+  mutate(lmError=(Minnesota.Intercollegiate.Championships-lmTest)) %>% 
+  cbind(treeTest = treetest) %>% 
+  mutate(treeError=(Minnesota.Intercollegiate.Championships-treeTest)) %>%
+  cbind(forestTest = foresttest) %>% 
+  mutate(forestError=(Minnesota.Intercollegiate.Championships-forestTest)) 
+
+# linear prediction
+miac_2017_prediction_placings_lm <-
+  TestResults %>%
+  arrange(race_group,lmTest) %>% 
+  group_by(race_group) %>%
+  mutate(place = ave(lmTest, FUN=ordered)) %>% 
+  left_join(miac_2017_results, by = c("name" = "name")) %>% 
+  select(place, real_place, name, team, class_year, lmTest, real_minutes, race_group) %>%
+  mutate(min_difference = round(real_minutes - lmTest, digits = 2)) %>%
+  rename('predict_place' = place) %>%  
+  rename('predict_minutes' = lmTest)
+
+# regression tree prediction
+miac_2017_prediction_placings_tree <-
+  TestResults %>%
+  arrange(race_group,treeTest) %>%
+  group_by(race_group) %>%
+  mutate(place = ave(treeTest, FUN=ordered)) %>% 
+  left_join(miac_2017_results, by = c("name" = "name")) %>% 
+  select(place, real_place, name, team, class_year, treeTest, real_minutes, race_group) %>%
+  mutate(min_difference = round(real_minutes - treeTest, digits = 2)) %>%
+  rename('predict_place' = place) %>%  
+  rename('predict_minutes' = treeTest)
+
+# random forest prediction
+miac_2017_prediction_placings_forest <-
+  TestResults %>%
+  arrange(race_group,forestTest) %>%
+  group_by(race_group) %>%
+  mutate(place = ave(forestTest, FUN=ordered)) %>% 
+  left_join(miac_2017_results, by = c("name" = "name")) %>% 
+  select(place, real_place, name, team, class_year, forestTest, real_minutes, race_group) %>%
+  mutate(min_difference = round(real_minutes - forestTest, digits = 2)) %>%
+  rename('predict_place' = place) %>%  
+  rename('predict_minutes' = forestTest)
+
+RunnersTrainWomen <-
+  RunnersTrain %>% 
+  filter(race_group == "Women")
+```
+
+St. Thomas entered the 2017 MIAC meet trying to repeat as champs with nationally ranked teams Carleton and St. Olaf hoping to surpass them.  These same three teams occupied the top three spots in the standings a year ago, as St. Thomas won with 50 points.  Carleton (67) narrowly edged out cross-town rival St. Olaf (69) for second place.  This season, 2017, Carleton finished in the top two as a team in all but one meet while St. Olaf consistently came away with top-10 finishes.  Our main goal was to predict the order that both individuals and teams would finish at the 2017 MIAC meet.
+
+To do so, we first predicted individual finish times at the 2017 MIAC meet using only gender, class year and race times prior to conference.  We chose to include the three fastest finish times for each runner from each year (meet1, meet2, meet3).  That is, meet1 represents a runner's best (fastest) finish time from the season prior to conference.  Similarly, meet2 and meet3 are the second and third best race times from the season for a given runner.  This involved some data imputation.  Although a fair amount of runners ran three races excluding conference, some did not. For those runners with only one prior race time, we carried this race time over for the second and third races.  For runners with two prior race times, we took an average to obtain a third race time.  We trained three different models using 2012 - 2016 data: linear, regression tree and random forest.  The linear model turned out to have the least amount of error between real times and predicted times.  The plot below shows the linear model superimposed onto our training data.  We then applied this linear model to our 2017 data.  Based on our predictions for individual finish times, we assigned places and scores to each runner.  To obtain our predicted team rankings, we summed the five lowest scores for each team.
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+#plot the linear model
+linear_model_plot_women <- ggplot(RunnersTrainWomen,aes(x = meet1,y=Minnesota.Intercollegiate.Championships)) +
+  geom_jitter(alpha=0.5, color = "indianred", aes(text=paste("Name: ", name, "\n Year: ", meet_year, "\n Team: ",team, "\n Class Year: ", class_year, "\n Meet 1: ", meet1, "\n Meet 2: ", meet2, "\n Meet 3: ", meet3, "\n MIAC: ", Minnesota.Intercollegiate.Championships)))+geom_smooth(method = "lm", se=F, color = "grey30") + labs(x = "Meet 1 Time", y = "MIAC Championship Time", 
+       title = "Linear Model Women MIAC Championship Time (in minutes) <br> Training Data 2012-2016") 
+
+ggplotly(p = linear_model_plot_women,tooltip=c("text"))
+```
+
+## Individual Predictions
+
+Our linear model correctly predicted the winner, second place finisher and third place finisher in the 2017 MIAC meet.  We predicted that Meg Mathison of Carleton and her teammate Emily Kaegi would finish 1-2 at the meet followed by Annika Halverson in third.  Although predicted finish times for these three runners were around 37 seconds too high, we still managed to place them accordingly in relation to other runners.  Additionally, we found that eight of the ten runners we predicted to be in the top ten actually finished in the top ten.  It is also interesting to note that all three St. Olaf athletes in the predicted top 10 placed lower than we had expected.  Bryony Hawgood (predicted 4) came in 7th while Briana Paulsen (predicted 8) and Jordan Lutz (predicted 9) finished 20th and 10th place respectively.  
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE, fig.fullwidth=TRUE}
+miac_women_2017_individual_prediction_lm <- 
+  miac_2017_prediction_placings_lm %>% 
+  filter(race_group == "Women") %>% 
+  subset(select = c(-race_group, - min_difference))
+
+kable(miac_women_2017_individual_prediction_lm[1:10,], caption="First ten rows of MIAC 2017 Women Individual Predictions", col.names = c("Predict Place","Real Place","Name", "Class Year", "Team","Predict Minutes", "Real Minutes"),align = c('c','c','l','l','l', 'l', 'l')) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+
+## Team Predictions
+
+Our model performed surprisingly well as five out of twelve of the women’s teams actually placed where we predicted them to.  These teams include Bethel (5), Concordia Moorhead (9), St. Catherine (10), Saint Mary’s (11), and Augsburg (12).  Additionally, no team's predicted ranking was off by more than two places.  A couple pairs of teams earned a place at the MIAC 2017 meet that was the reverse of what we had predicted.  The most notable pair of teams is Carleton and St. Olaf.  Carleton ended up dominating the field and winning the meet with a mere 21 points and St. Olaf came in a distant second with 70 points.  However, we predicted that St. Olaf would overtake Carleton by only one point and come out on top.  A possible explanation for this vast difference is our lack of data.  Since we only included Minnesota meets and two Wisconsin meets, some of the best race times for Carleton’s top runners were not included as they competed elsewhere out of state.  On the other hand, our individual predictions indicate that St. Olaf runners failed to improve as much as other runners at the conference meet.  Many of St. Olaf's top scorers did not place as well as we had predicted.  Additionally, we did not incorporate weather conditions or a metric for course difficulty into our model.  Both of these may have improved our predictions in terms of team standings.     
+
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE, fig.fullwidth=TRUE}
+miac_women_2017_team_prediction_lm <- 
+  miac_2017_prediction_placings_lm %>% 
+  # score top seven runners per team
+  filter(race_group == "Women") %>% 
+  group_by(team) %>% 
+  top_n(n = -7, wt = predict_place) %>%
+  ungroup() %>% 
+  mutate(score = ave(predict_minutes, FUN=seq_along)) %>% 
+  # calculate team score from top 5 runners
+  group_by(team) %>% 
+  top_n(n = -5, wt = score) %>%
+  summarise(team_score = sum(score)) %>%
+  arrange(team_score) %>%
+  mutate(team_rank = as.integer(ave(team_score, FUN=ordered))) %>%    
+  rename("predict_score"="team_score") %>%
+  rename("predict_rank"="team_rank") %>% 
+  left_join(miac_women_team_placings_2017, by = c("team" = "team")) %>% 
+  select(team, predict_score, real_score, predict_rank, real_rank)
+
+kable(miac_women_2017_team_prediction_lm,col.names = c("Team","Predicted Score","Actual Score","Predicted Rank","Actual Rank"),align = c('l','c','c','c','c'), caption="MIAC 2017 Women Team Predictions") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+# *Future Work*
+A few ideas for the future: 
+
+* Collect more meet results data! Incorportating more meets could allow us to make more accurate predictions.  Instead of predicting finish times for a runner based on their three best performances from the season, it would be nice to be able to predict their time for the next meet based on the most recent result.  We are also interested to see what we could do with a seasonal time series model.
+* We would like to find a way to measure and grade course difficulty to more easily compare results meet to meet and make better predictions.  To compare times over courses of various difficulties (and even perhaps distance variations), we would need some way to standardize those times to "level them out".  This would require us to determine which courses are fast and which are slow.  We could create such a metric by combination of terrain difficulty and percentage of personal records ran at the meet.  If everyone is running a season best time on a course then it is bound to be a fast course!  
+* Consolidate all of our data cleaning to one function.  As we continued to work with the data, we handled additional small data fixes as needed.  This function would go through and consolidate these fixes and clean up the code as necessary.
+
+
+# *Shiny App*
+To explore more of our work visit our Shiny App:
+
+* [MIAC Cross Country Shiny App](https://heatherlendway.shinyapps.io/miacShinyApp/)
+
+We built this app a resource for cross country coaches, running fanatics and statisticians alike.  We provide interactive plots for runner progression (team and individual), conference awards, top meet times, predicitions and more!  Many of our visuals can be filtered by team and in some cases by individual runners.  We hope that this app provides coaches with a tool to look more closely at past and present team performance and the history behind MIAC cross country.
+
+# *Appendix*
+
+Download our supplemental material here: [MIAC XC Supplemental Material](https://drive.google.com/drive/folders/1JWy45u_yZ_dGCfcQgYxwSgPMglMqEzS-?usp=sharing)
+
+To recreate our visuals check out our clean data files located in the *data* folder:  
+
+* miacNoTime171104.csv
+* wiscMeets.csv
+
+If you want to see how we scraped all of our data look at our code file and instructions on how to run through the scraping process:
+
+* XCWebScraping.Rmd
+* XCWebScraping.html
+
+To run the visuals in this file open our .rmd code file:  
+
+* MIACXCBlog.Rmd
+
+Want to see how our regression tree and random forest models did? Check out our prediction code files:  
+
+* MIACXCPredictions.Rmd
+* MIACXCPredictions.html
+
+# *Men's results*
+But what about the men's results?  For those of you that are hoping to answer the same questions about team size, historical conference placings and predictions for men, we have provided the same exact plots from the perspective of MIAC Men XC.  Enjoy!
+
+## *Which schools attract the most male cross country runners?*
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+miac_team_size_men <-
+  miac_xc %>%
+  filter(race_group == "Men") %>% 
+  distinct(name, meet_year, class_year, team) %>% 
+  group_by(meet_year, team) %>% 
+  summarise(size = n())
+
+miac_team_size_men_plot <- 
+  ggplot(miac_team_size_men, aes(x = team, y = size)) + 
+  geom_col(aes(fill = meet_year, text=paste("Team: ", team, "\n Year: ", meet_year,"\n Size: ",size)), position = "dodge") + 
+  labs(title = "MIAC Men Cross Country Team Size <br> Years 2012 - 2017", 
+       x = "College/University",  y = "Number of Runners", fill = "Year") +  
+  theme(axis.text.x=element_text(angle=45,hjust=1)) + 
+  scale_fill_manual(values = c("red","salmon", "pink","slategray1", "steelblue1","steelblue4")) 
+
+ggplotly(p = miac_team_size_men_plot,tooltip=c("text"))
+
+```
+
+
+## *What teams have consistently done well at conference?*
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+
+miac_men_team_placings <-
+  miac_xc %>%
+  filter(grepl("Minnesota Intercollegiate Championships", meet_name)) %>%
+  filter(race_group == "Men") %>%
+  mutate(score = as.numeric(score)) %>%
+  filter(!is.na(score)) %>%
+  group_by(team, meet_year) %>%
+  top_n(n = -5, wt = score) %>% 
+  summarise(team_score = sum(score)) %>%
+  group_by(meet_year) %>%
+  arrange(team_score, desc(team)) %>%
+  mutate(team_rank = row_number()) %>%
+  arrange(meet_year)
+
+miac_men_team_placings_plot <-
+  ggplot(miac_men_team_placings, aes(x = meet_year, y = team_rank, group = team)) + 
+  geom_point(aes(color = team, text=paste("Team: ", team, "\n Year: ", meet_year, "\n Place: ",team_rank, "\n Score: ",team_score)), size = 2) + 
+  geom_line(aes(color = team)) + 
+  labs(title = "MIAC Men Team Placings <br> Years 2012 - 2017", x = "Year",  y = "Team Rank", color="Team") + 
+  scale_color_manual(values=c("palevioletred1", "violetred1", "red", "darkorange2", "goldenrod", 
+                                  "green1", "green4", "turquoise", "blue", "purple", "slategrey")) 
+
+ggplotly(p = miac_men_team_placings_plot,tooltip=c("text"))
+
+```
+
+## *How did predictions for teams at 2017 MIAC Championship hold up?*
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+RunnersTrainMen <-
+  RunnersTrain %>% 
+  filter(race_group == "Men")
+
+#plot the linear model
+linear_model_plot_men <- 
+  ggplot(RunnersTrainMen,aes(x = meet1,y=Minnesota.Intercollegiate.Championships))+geom_jitter(alpha=0.5, color = "turquoise3", aes(text=paste("Name: ", name, "\n Year: ", meet_year, "\n Team: ",team, "\n Class Year: ", class_year, "\n Meet 1: ", meet1, "\n Meet 2: ", meet2, "\n Meet 3: ", meet3, "\n MIAC: ", Minnesota.Intercollegiate.Championships)))+geom_smooth(method = "lm", se=F, color = "grey30")+ labs(x = "Meet 1 Time", y = "MIAC Championship Time", title = "Linear Model Men MIAC Championship Time (in minutes) <br> Training Data 2012-2016") 
+
+ggplotly(p = linear_model_plot_men,tooltip=c("text"))
+```
+
+### Individual Predictions
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE, fig.fullwidth=TRUE}
+miac_men_2017_individual_prediction_lm <- 
+  miac_2017_prediction_placings_lm %>% 
+  filter(race_group == "Men") %>% 
+  subset(select = c(-race_group, - min_difference))
+
+kable(miac_men_2017_individual_prediction_lm[1:10,], caption="First ten rows of MIAC 2017 Men Individual Predictions", col.names = c("Predict Place","Real Place","Name", "Class Year", "Team","Predict Minutes", "Real Minutes"),align = c('c','c','l','l','l', 'l', 'l')) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+### Team Predictions
+```{r, echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+
+miac_men_2017_team_prediction_lm <- 
+  miac_2017_prediction_placings_lm %>% 
+  # score top seven runners per team
+  filter(race_group == "Men") %>% 
+  group_by(team) %>% 
+  top_n(n = -7, wt = predict_place) %>%
+  ungroup() %>% 
+  mutate(score = ave(predict_minutes, FUN=seq_along)) %>% 
+  # calculate team score from top 5 runners
+  group_by(team) %>% 
+  top_n(n = -5, wt = score) %>%
+  summarise(team_score = sum(score)) %>%
+  arrange(team_score) %>%
+  mutate(team_rank = as.integer(ave(team_score, FUN=ordered))) %>%    
+  rename("predict_score"="team_score") %>%
+  rename("predict_rank"="team_rank") %>% 
+  left_join(miac_men_team_placings_2017, by = c("team" = "team")) %>% 
+  select(team, predict_score, real_score, predict_rank, real_rank)
+
+kable(miac_men_2017_team_prediction_lm,col.names = c("Team","Predicted Score","Actual Score","Predicted Rank","Actual Rank"),align = c('l','c','c','c','c'), caption="MIAC 2017 Men Team Predictions") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+```

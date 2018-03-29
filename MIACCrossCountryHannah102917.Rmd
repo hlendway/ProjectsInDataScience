@@ -1,0 +1,623 @@
+---
+title: "MIACCrossCountry"
+output: html_notebook
+---
+
+```{r}
+library(rvest)
+library(dplyr)
+library(magrittr)
+library(tidyverse)
+library(jsonlite)
+library(stringr)
+library(xml2)
+library(XML)
+library(rvest)
+library(tidyverse)
+library(httr)
+library(httpuv)
+library(RCurl)
+library(stringr)
+library(lubridate)
+```
+
+Obtain list of urls for Minnesota college cross country meets from tfrrs (2012 - 2017).
+```{r}
+#Scrape the data from this page: https://www.tfrrs.org/results_search.html?page=0&title=1&go=1&state=mn&sport=xc to get links to the individual result links then scrap those
+
+resultLinks <- data.frame()
+resultList <- read_html("https://www.tfrrs.org/results_search.html?page=0&title=1&go=1&state=mn&sport=xc")
+
+# list of meet links
+links <- resultList %>% 
+  html_nodes("#results_search a")
+
+# convert each link to string and add to resultLinks dataframe
+for(i in 1:length(links)) {
+  
+  link <- links[i] %>% 
+    html_attrs() %>% 
+    toString()
+ 
+  df <- tibble(link)
+  resultLinks <- rbind(resultLinks,df)
+}
+
+# add appropriate prefix for links, convert to character
+resultLinksClean <- resultLinks %>% 
+  mutate(link = gsub("(//www)","https://www",link),
+         link = as.character(link))
+
+# write result links list to csv
+write.csv(resultLinksClean,"/Users/hannahsonsalla/Desktop/Math/DataScience/Project/resultLinks.csv")
+
+```
+
+Data scraping: Scrape athlete data from each race using url list.
+```{r}
+resultLinks <- read.csv("/Users/hannahsonsalla/Desktop/Math/DataScience/Project/resultLinks.csv")
+
+# MIAC Cross Country Championships
+#resultLinks <- read_html("https://www.tfrrs.org/results/xc/6155.html")
+#resultLinks <- data.frame()
+
+resultLinks <- resultLinks %>%
+  mutate(link = as.character(link))
+
+minnesota_xc<-data.frame()
+
+# Loop through every url in result links url list
+for (url in resultLinks$link) {
+    
+    # Read the url page
+    page<- read_html(url)
+    
+    #Retrieve meet name
+    meet_name <-
+      page %>%
+      html_nodes(".title a") %>%
+      html_text()
+    
+    #Retrieve meet date
+    meet_date <-
+      page %>%
+      html_nodes(".datelocation li:nth-child(1)") %>%
+      html_text()
+    meet_date_short<-substr(meet_date,start=6,stop=14)
+    
+    #Retrieve meet location
+    meet_location <-
+      page %>%
+      html_nodes(".datelocation li:nth-child(2)") %>%
+      html_text()
+    meet_location_short<-substr(meet_location,start=12,stop=(nchar(meet_location) - 4))
+    meet_location_short = gsub("(\n)|(\nCity Not Supplied,)",", ",meet_location_short)
+    
+    #Retrieve start time
+    start_time <-
+      page %>%
+      html_node("div:nth-child(12) span") %>%
+      html_text()
+    start_time = gsub("(\n)*(\t)*","",start_time)
+    
+    race <- page %>% 
+      html_nodes("a+ div div")
+    
+    # Get list of tables on page
+    tables <- page %>% 
+      html_nodes("table")
+    
+    #Last table on page contains womens results
+    lastTableLocation <- length(tables)
+    
+    # Every other table contains individual results
+    tableList = c(lastTableLocation)
+    tableRef = lastTableLocation - 2
+    while(tableRef >= 4) {
+      tableList=c(tableRef,tableList)
+      tableRef = tableRef - 2
+    }
+    
+    # Loop through individual result tables 
+    for(t in (1:length(tableList))) { 
+      
+      # Retrieve race group (Women's 6k, Men's 8k, etc.)
+      race_group=""
+      if (length(race[t] %>% html_text()>0)) {
+        race_group = race[t] %>% html_text()
+        race_group = gsub("(\n)*(\t)*","",race_group)
+      } 
+    
+      lastTableDivs <- tables[tableList[t]] %>% 
+        html_nodes("tr") %>% 
+        html_nodes("td") %>% 
+        html_nodes("div")
+      
+      #Need to change this to only loop through first 7 td divs in the table
+      tableRows <- tables[tableList[t]] %>% 
+        html_nodes("tr")
+      
+      for(row in (1:length(tableRows))) {
+        
+        tableDivs <- tableRows[row] %>% 
+          html_nodes("td")  %>% 
+          html_nodes("div")
+        
+        # As long as table not empty
+        if(length(tableDivs)>0) {
+        
+         # Retrieve place
+          place <- tableDivs[1] %>%
+            html_text()
+          
+          # Retrieve and inspect full names
+          name <- tableDivs[2] %>%
+            html_text()
+      
+          # Retrieve and inspect class year
+          class_year <- tableDivs[3] %>%
+            html_text()
+      
+          # Retrieve and inspect team
+          team <- tableDivs[4] %>%
+            html_text()
+      
+          # Retrieve and inspect avg. mile
+          avg_mile <- tableDivs[5] %>%
+            html_text()
+          
+          # Retrieve time
+          time <- tableDivs[6] %>%
+            html_text()
+          
+          # Retrieve score
+          score <- tableDivs[7] %>%
+            html_text()
+          
+          
+          meet_info <- 
+            tibble(meet_name = meet_name, meet_date = meet_date_short, meet_location = meet_location_short, start_time=start_time, race_group=race_group, place = place, name = name, class_year = class_year, team = team, avg_mile = avg_mile, time = time, score = score, url=url)
+        
+          #store the temp values into the master dataframe
+          minnesota_xc<-rbind(minnesota_xc, meet_info)
+        }
+      }
+    }
+    print(url)
+} 
+
+head(minnesota_xc)
+
+#write.csv(minnesota_xc,"/Users/hannahsonsalla/Desktop/Math/DataScience/Project/minnesotaXC.csv")
+```
+
+Clean data
+
+Code for fixing MIAC conference championships 2013
+
+miac_xc = read.csv("/Users/hannahsonsalla/Desktop/Math/DataScience/Project/miacCC171022.csv")
+conference_2013 = read.csv("/Users/hannahsonsalla/Desktop/Math/DataScience/Project/conference2013.csv")
+
+minnesota_xc <-
+  miac_xc %>% 
+  filter(!meet_name == "MIAC Cross Country Championships") %>% 
+  rbind(conference_2013)
+
+write.csv(minnesota_xc,"/Users/hannahsonsalla/Desktop/Math/DataScience/Project/miacCC171027.csv")
+
+Read in CSV
+```{r}
+# corrected for augsburg meets, miac 2013 -  results through 2017 no conference
+minnesota_xc = read.csv("/Users/hannahsonsalla/Desktop/Math/DataScience/Project/miacCC171027.csv")
+
+# corrected for augsburg meets, miac 2013 -  results through 2017 conference
+#minnesota_xc = read.csv("/Users/hannahsonsalla/Desktop/Math/DataScience/Project/miacCC171028.csv")
+```
+
+
+Clean all of minnesota XC college data
+```{r}
+minnesota_xc_clean <- 
+  minnesota_xc %>%
+
+  # get rid of \n in columns
+  mutate(meet_name = gsub("(\n)*","", meet_name)) %>%
+  mutate(place = gsub("(\n)*","",place)) %>%
+  mutate(name = gsub("(\n)*","", name)) %>%
+  mutate(class_year = gsub("(\n)*","", class_year)) %>%
+  mutate(team = gsub("(\n)*","", team)) %>%
+  mutate(avg_mile = gsub("(\n)*","", avg_mile)) %>%
+  mutate(time = gsub("(\n)*","", time)) %>%
+  mutate(score = gsub("(\n)*","",score)) %>% 
+    
+  # get rid of leading and trailing whitespace 
+  mutate(meet_name = trimws(meet_name, "both")) %>%
+  mutate(meet_location = trimws(meet_location, "both")) %>% 
+
+  # need to remove row with Div I West Qualifying header info
+  filter(!grepl("2017", name)) %>% 
+  # get rid of irrelevant header rows
+  filter(place != "Place")  %>%
+  filter(place != "Rank")  %>%
+  filter(!grepl("\\d+", team)) %>% 
+  filter(!grepl("\xfc\xbe\x8c\x86\x84\xbc",team))  %>%
+  # filter out DNF runners 
+  filter(time != "DNF") %>%
+  # filter out runners with no name
+  filter(name != ""  & name != " ") %>%
+  # filter out unattached runners 
+  filter(!grepl("Unattatched|Unattached|unattached", team)) %>% 
+  # filter out alumni 
+  filter(!grepl("Alumni|alumni|Alum", team)) %>%
+  # filter out track clubs and Run n Fun
+  filter(!grepl("club|Club", team)) %>%
+  filter(!grepl("Run|Running", team)) %>%
+  # get rid of Fall Finale 2013 meet - men and women results intermixed
+  filter(!meet_name == "Fall Finale") %>% 
+  
+  # replace divs in score with NA
+  mutate(score = ifelse(grepl("\xfc\xbe\x8c\x86\x84\xbc", score), NA, score)) %>%
+  
+  # shorten start time text
+  mutate(start_time = gsub("(\n)*","", start_time)) %>%
+  mutate(start_time = substr(start_time,start=13,stop=nchar(start_time))) %>%
+  
+  #get rid of weather condition in start time 2017 MIAC Conference
+  #mutate(start_time = ifelse(grepl("12:00 PM", start_time), "12:00 PM", start_time)) %>%
+  #mutate(start_time = ifelse(grepl("11:00 AM", start_time), "11:00 AM", start_time)) %>%
+  
+  #filter rows with time more than 1 hour
+  #filter(!grepl("?=:.*:", time)) %>% 
+  
+  # convert race date to date format
+  mutate(meet_date = as.Date(meet_date, "%m/%d/%y")) %>% 
+  # add meet year column
+  mutate(meet_year = as.character(year(meet_date))) %>%
+  
+  # add column for meet distance
+  mutate(meet_kilometers = ifelse(grepl("3k", race_group), 3, "NA")) %>%
+  mutate(meet_kilometers = ifelse(grepl("3.2k", race_group), 3.2, meet_kilometers)) %>%
+  mutate(meet_kilometers = ifelse(grepl("4k", race_group), 4, meet_kilometers)) %>%
+  mutate(meet_kilometers = ifelse(grepl("5k", race_group), 5, meet_kilometers)) %>%
+  mutate(meet_kilometers = ifelse(grepl("6k", race_group), 6, meet_kilometers)) %>%
+  mutate(meet_kilometers = ifelse(grepl("6.437k|4 Mile", race_group), 6.437, meet_kilometers)) %>%
+  mutate(meet_kilometers = ifelse(grepl("8k", race_group), 8, meet_kilometers)) %>%
+  # alter race group to be of values men or women
+  mutate(race_group = ifelse(grepl("Women", race_group), "Women", "Men")) %>%
+    
+  # only get location to first ,
+  mutate(meet_location = gsub("(.*?)(,.*)", "\\1", meet_location )) %>%
+  mutate(meet_location = gsub("(.*?)(-.*)", "\\1", meet_location )) %>%
+  
+  # condense teams
+  mutate(team = ifelse(grepl("Augsburg", team), "Augsburg", team)) %>%
+  mutate(team = ifelse(grepl("Bethel", team), "Bethel", team)) %>%
+  mutate(team = ifelse(grepl("Carleton", team), "Carleton", team)) %>%
+  mutate(team = ifelse(grepl("Concordia.*Moorhead|Moorhead.*Concordia", team), "Concordia Moorhead", team)) %>%
+  mutate(team = ifelse(grepl("Gustavus Adolphus",team), "Gustavus Adolphus", team)) %>%
+  mutate(team = ifelse(grepl("Hamline", team), "Hamline", team)) %>%
+  mutate(team = ifelse(grepl("Macalester", team), "Macalester", team)) %>%
+  mutate(team = ifelse(grepl("St. Benedict", team), "St. Benedict", team)) %>%
+  mutate(team = ifelse(grepl("St. Catherine", team), "St. Catherine", team)) %>%
+  mutate(team = ifelse(grepl("St. John's", team), "St. John's", team)) %>%
+  mutate(team = ifelse(grepl("Saint Mary's", team), "Saint Mary's", team)) %>%
+  mutate(team = ifelse(grepl("St. Olaf", team), "St. Olaf", team)) %>%
+  mutate(team = ifelse(grepl("St. Thomas", team), "St. Thomas", team)) %>%
+  
+  # condense locations
+  mutate(meet_location = ifelse(meet_location == "St. Kates", "St. Catherine", meet_location)) %>%
+  mutate(meet_location = ifelse(grepl("St. Catherine", meet_location), "St. Catherine", meet_location)) %>%
+  mutate(meet_location = ifelse(grepl("Carleton", meet_location), "Carleton", meet_location)) %>%
+  mutate(meet_location = ifelse(grepl("St. Olaf", meet_location), "St. Olaf", meet_location)) %>%
+  mutate(meet_location = ifelse(grepl("Como Golf Course", meet_location), "Como Park Golf Course", meet_location)) %>%
+  mutate(meet_location = ifelse(grepl("Mary's", meet_location), "Saint Mary's", meet_location)) %>%
+  mutate(meet_location = ifelse(grepl("Les Bolstad", meet_location), "Les Bolstad Golf Course", meet_location)) %>%
+  mutate(meet_location = ifelse(grepl("Gustavus Adolphus", meet_location), "Gustavus Adolphus", meet_location)) %>%
+  mutate(meet_location = ifelse(grepl("Gusvaus Adlophus", meet_location), "Gustavus Adolphus", meet_location)) %>%
+  mutate(meet_location = ifelse(grepl("Crown", meet_location), "Crown", meet_location)) %>% 
+    
+  # separate time into minutes and seconds
+  separate(time, c("race_minutes", "race_seconds"), sep = ":", remove = FALSE) %>% 
+  mutate(new_time = as.numeric(race_minutes) + (as.numeric(race_seconds)/60)) 
+```
+
+Note: row 1821 and row 1822 have times over 1 hour (1:07:00.5 and 1:07:43.9)
+
+MIAC XC data
+
+MIAC colleges: Augsburg University, Bethel University, Carleton College, Concordia Moorhead College, Gustavus Adolphus College, Hamline University, Macalester College, College of Saint Benedict, St. Catherine University, Saint John's University, Saint Mary's University, St. Olaf College, University of St. Thomas 
+```{r}
+miacSchools = c("Augsburg", "Bethel", "Carleton", "Concordia Moorhead", "Gustavus Adolphus", "Hamline", "Macalester", "St. Benedict", "St. Catherine", "St. John's", "Saint Mary's", "St. Olaf", "St. Thomas")
+
+miac_xc <-
+  minnesota_xc_clean %>%
+  filter(team %in% miacSchools) %>% 
+  # MIAC Championships 2014 has two different links
+  filter(!grepl("https://www.tfrrs.org/results/xc/7815.html", url))
+```
+
+Let's look team size by school in the MIAC for 2017.
+
+Men:
+```{r}
+miac_team_size_men <-
+  miac_xc %>%
+  filter(race_group == "Men") %>% 
+  distinct(name, meet_year, team, .keep_all = TRUE)
+```
+
+Stacked Plot - to compare which school attracts most runners
+```{r}
+team_size_men_plot1 <- ggplot(miac_team_size_men, aes(team)) + geom_bar(aes(fill = meet_year)) + labs(title = "MIAC Men Cross Country Team Size", subtitle = "Years 2012 - 2017", x = "College/University",  y = "number of runners", fill = "year") +  theme(axis.text.x=element_text(angle=45,hjust=1)) + scale_fill_manual(values = c("red","salmon", "pink","slategray1", "steelblue1","steelblue4"))
+
+team_size_men_plot1
+```
+
+Side-by-Side Plot - to look at which schools have largest teams per year
+```{r}
+team_size_plot_men2 <- ggplot(miac_team_size_men, aes(team)) + geom_bar(aes(fill = meet_year), position = "dodge") + labs(title = "MIAC Men Cross Country Team Size", subtitle = "Years 2012 - 2017", x = "College/University",  y = "number of runners", fill = "year") +  theme(axis.text.x=element_text(angle=45,hjust=1)) + scale_fill_manual(values = c("red","salmon", "pink","slategray1", "steelblue1","steelblue4"))
+
+team_size_plot_men2
+```
+
+Women:
+```{r}
+miac_team_size_women <-
+  miac_xc %>%
+  filter(race_group == "Women") %>% 
+  distinct(name, meet_year, team, .keep_all = TRUE)
+```
+
+Stacked Plot - to compare which school attracts most runners
+```{r}
+team_size_women_plot1 <- ggplot(miac_team_size_women, aes(team)) + geom_bar(aes(fill = meet_year)) + labs(title = "MIAC Women Cross Country Team Size", subtitle = "Years 2012 - 2017", x = "College/University",  y = "number of runners", fill = "year") +  theme(axis.text.x=element_text(angle=45,hjust=1)) + scale_fill_manual(values = c("red","salmon", "pink","slategray1", "steelblue1","steelblue4"))
+
+team_size_women_plot1
+```
+
+Side-by-Side Plot - to look at which schools have largest teams per year
+```{r}
+team_size_women_plot2 <- ggplot(miac_team_size_women, aes(team)) + geom_bar(aes(fill = meet_year), position = "dodge") + labs(title = "MIAC Women Cross Country Team Size", subtitle = "Years 2012 - 2017", x = "College/University",  y = "number of runners", fill = "year") +  theme(axis.text.x=element_text(angle=45,hjust=1)) + scale_fill_manual(values = c("red","salmon", "pink","slategray1", "steelblue1","steelblue4"))
+
+team_size_women_plot2
+```
+
+MIAC Championships - Winner, All Conference, Honorable Mention by Year
+
+Men
+```{r}
+places = c("1", "15", "25")
+miac_men_xc_championships <-
+  miac_xc %>% 
+  filter(race_group == "Men") %>% 
+  filter(grepl("MIAC", meet_name)) %>%
+  filter(place %in% places) %>%
+  mutate(place_category = ifelse(as.numeric(place) == 15, "All Conference", "Honorable Mention")) %>% 
+  mutate(place_category = ifelse(as.numeric(place) == 1, "Champion", place_category))  
+miac_men_xc_championships2 <-
+  miac_xc %>%
+  filter(race_group == "Men") %>% 
+  filter(grepl("MIAC", meet_name)) %>%
+  filter(as.numeric(place) < 26) %>%
+  mutate(place_category = ifelse(as.numeric(place) <= 15, "All Conference", "Honorable Mention")) %>%
+  mutate(place_category = ifelse(as.numeric(place) == 1, "Champion", place_category)) 
+```
+
+Plot
+```{r}
+miac_men_conference_place_plot <- ggplot(miac_men_xc_championships, aes(x = meet_year, y = new_time, group = place_category)) + geom_point(data = miac_men_xc_championships2, alpha = 0.5, aes(color = place_category)) + geom_point(aes(color = place_category), size = 3) + geom_line(aes(color = place_category)) + scale_color_manual(values = c("red", "green", "blue"), breaks=c("Champion","All Conference","Honorable Mention")) + labs(title = "MIAC Championships Men (8k)", subtitle = "Champion, All-Conference, Honorable Mention", x = "year",  y = "time (minutes)", fill = "place")
+
+miac_men_conference_place_plot
+```
+
+
+Women
+```{r}
+places = c("1", "15", "25")
+miac_women_xc_championships <-
+  miac_xc %>% 
+  filter(race_group == "Women") %>% 
+  filter(grepl("MIAC", meet_name)) %>%
+  filter(place %in% places) %>%
+  mutate(place_category = ifelse(as.numeric(place) == 15, "All Conference", "Honorable Mention")) %>% 
+  mutate(place_category = ifelse(as.numeric(place) == 1, "Champion", place_category))  
+miac_women_xc_championships2 <-
+  miac_xc %>%
+  filter(race_group == "Women") %>% 
+  filter(grepl("MIAC", meet_name)) %>%
+  filter(as.numeric(place) < 26) %>%
+  mutate(place_category = ifelse(as.numeric(place) <= 15, "All Conference", "Honorable Mention")) %>%
+  mutate(place_category = ifelse(as.numeric(place) == 1, "Champion", place_category)) 
+```
+
+Plot
+```{r}
+miac_women_conference_place_plot <- ggplot(miac_women_xc_championships, aes(x = meet_year, y = new_time, group = place_category)) + geom_point(data = miac_women_xc_championships2, alpha = 0.5, aes(color = place_category)) + geom_point(aes(color = place_category), size = 3) + geom_line(aes(color = place_category)) + scale_color_manual(values = c("red", "green", "blue"), breaks=c("Champion","All Conference","Honorable Mention")) + labs(title = "MIAC Championships Women (6k)", subtitle = "Champion, All Conference, Honorable Mention", x = "year",  y = "time (minutes)", fill = "place")
+
+miac_women_conference_place_plot
+```
+
+MIAC Courses 2016
+
+Men
+```{r}
+miac_men_courses_2016 <-
+  miac_xc %>% 
+  filter(race_group == "Men") %>%
+  filter(meet_year == 2016) %>%
+  separate(avg_mile, c("mile_minutes", "mile_seconds"), sep = ":", remove = FALSE) %>% 
+  mutate(new_mile = as.numeric(mile_minutes) + (as.numeric(mile_seconds)/60)) %>% 
+  mutate(meet_name = gsub("Cross Country Championships", "", meet_name))
+
+miac_men_courses_2016$meet_name <- factor(miac_men_courses_2016$meet_name, levels = miac_men_courses_2016$meet_name[order(miac_men_courses_2016$meet_date)])
+```
+
+Plot
+```{r}
+men_courses_2016_plot <- ggplot(miac_men_courses_2016, aes(x = meet_name, y = new_mile)) + geom_point(alpha = 1/10) + geom_boxplot() + labs(title = "MIAC Men Cross Country Courses 2016", x = "courses",  y = "average mile (minutes)") +  theme(axis.text.x=element_text(angle=45,hjust=1))
+
+men_courses_2016_plot
+```
+
+Women
+```{r}
+miac_women_courses_2016 <-
+  miac_xc %>% 
+  filter(race_group == "Women") %>%
+  filter(meet_year == 2016) %>%
+  separate(avg_mile, c("mile_minutes", "mile_seconds"), sep = ":", remove = FALSE) %>% 
+  mutate(new_mile = as.numeric(mile_minutes) + (as.numeric(mile_seconds)/60)) %>% 
+  mutate(meet_name = gsub("Cross Country Championships", "", meet_name))
+
+miac_women_courses_2016$meet_name <- factor(miac_women_courses_2016$meet_name, levels = miac_women_courses_2016$meet_name[order(miac_women_courses_2016$meet_date)])
+```
+
+Plot
+
+Had to use race time instead of average mile.  St. Olaf Invitational calculated mile time in terms of 8k instead of 6k for women so it's incorrect.
+```{r}
+women_courses_2016_plot <- ggplot(miac_women_courses_2016, aes(x = meet_name, y = new_time)) + geom_point(alpha = 1/10) + geom_boxplot() + labs(title = "MIAC Women Cross Country Courses 2016", x = "courses",  y = "average time (minutes)") +  theme(axis.text.x=element_text(angle=45,hjust=1))
+
+women_courses_2016_plot
+```
+
+Progression of 4 year runners with yearly PRs
+
+Men
+```{r}
+four_years_miac_men <-
+  miac_xc %>% 
+  filter(race_group == "Men") %>%
+  filter(meet_kilometers == 8) %>%
+  group_by(name, meet_year) %>%
+  summarise(year_pr = min(new_time)) %>%
+  # want years 2013 - 2016
+  filter(!meet_year == 2012 & !meet_year == 2017) %>%
+  group_by(name) %>%
+  filter(n() == 4)
+```
+
+Men: Plot of all MIAC men four year runners 2013 - 2016
+```{r}
+miac_four_years_men_plot <- ggplot(four_years_miac_men, aes(x = meet_year, y = year_pr)) + geom_point(alpha = 1/2) + labs(title = "MIAC Men Four Year Runners", subtitle = "Progression of Yearly Personal Bests 2013 - 2016", x = "year",  y = "time (minutes)") + geom_boxplot()
+
+miac_four_years_men_plot
+```
+
+Men: Random Individual 3 runners yearly PRs
+```{r}
+runners <- "Coffey, Joe|Edstrom, Walter|Ryan, Mike"
+men_four_runners_three <-
+  four_years_miac_men %>%
+  filter(grepl(runners, name))
+```
+
+Plot
+```{r}
+miac_four_years_men_plot2 <- ggplot(men_four_runners_three, aes(x = meet_year, y = year_pr, group = name)) + geom_point(aes(color = name), size = 2) + geom_line(aes(color = name)) + labs(title = "MIAC Men Four Year Runners", subtitle = "Progression of Yearly Personal Bests 2013 - 2016", x = "year",  y = "time (minutes)") 
+
+miac_four_years_men_plot2
+```
+
+
+Men: Top 10 MIAC 2016 Individuals Progression (Yearly PRs)
+```{r}
+top_10_runners <- "Coffey, Joe|Bugler, Ryan|Newsum, Jovan|Knobbe,Thomas|Jones, Evan|Smith, Trevor|Kuzara, Maxwell|Eggers, Jacob|Dammann, Carston|Edstrom, Walter|Logan,James|Salan, Abdullahi"
+men_four_runners_top_10 <-
+  four_years_miac_men %>%
+  filter(grepl(top_10_runners, name))
+```
+
+Plot
+```{r}
+miac_four_years_men_plot3 <- ggplot(men_four_runners_top_10, aes(x = meet_year, y = year_pr, group = name)) + geom_point(aes(color = name), size = 2) + geom_line(aes(color = name)) + labs(title = "MIAC Championships 2016 Top Ten Men", subtitle = "Progression of Yearly Personal Bests 2013 - 2016", x = "year",  y = "time (minutes)") + scale_color_manual(values=c("palevioletred1", "violetred1", "red", "darkorange2", "goldenrod", "green1", "green4", "turquoise", "blue", "purple", "slategrey")) 
+
+miac_four_years_men_plot3
+```
+
+Women
+```{r}
+four_years_miac_women <-
+  miac_xc %>% 
+  filter(race_group == "Women") %>%
+  filter(meet_kilometers == 6) %>%
+  group_by(name, meet_year) %>%
+  summarise(year_pr = min(new_time)) %>%
+  # want years 2013 - 2016
+  filter(!meet_year == 2012 & !meet_year == 2017) %>%
+  group_by(name) %>%
+  filter(n() == 4)
+```
+
+Women: Plot of all MIAC men four year runners 2013 - 2016
+```{r}
+miac_four_years_women_plot <- ggplot(four_years_miac_women, aes(x = meet_year, y = year_pr)) + geom_point(alpha = 1/2) + labs(title = "MIAC Women Four Year Runners", subtitle = "Progression of Yearly Personal Bests 2013 - 2016", x = "year",  y = "time (minutes)") + geom_boxplot()
+
+miac_four_years_men_plot
+```
+
+Women: Top 10 MIAC 2016 Individuals Progression (Yearly PRs)
+```{r}
+top_10_runners2 <- "Irving, Taybri|Meyer, Kimber|Janot,Kayla|McGivern, Bridget|Hoornaert, Jamie|Kosobud, Allison|Trujillo, Claire|Weber, Emma|Hall, Rachel|Nakasaka, Laura|Kirkeide, Courtney|Nipper, Nicole|DeVore, Sarah Jo|Ramsey, Eliza"
+women_four_runners_top_10 <-
+  four_years_miac_women %>%
+  filter(grepl(top_10_runners2, name))
+```
+
+Plot
+```{r}
+miac_four_years_women_plot3 <- ggplot(women_four_runners_top_10, aes(x = meet_year, y = year_pr, group = name)) + geom_point(aes(color = name), size = 2) + geom_line(aes(color = name)) + labs(title = "MIAC Championships 2016 Top Ten Women", subtitle = "Progression of Yearly Personal Bests 2013 - 2016", x = "year",  y = "time (minutes)") + scale_color_manual(values=c("palevioletred1", "violetred1", "red", "darkorange2", "goldenrod", "green1", "green4", "turquoise", "blue", "purple", "slategrey")) 
+
+miac_four_years_women_plot3
+```
+
+MIAC Team Placings 2012 - 2016
+
+Men
+```{r}
+miac_men_team_placings <-
+  miac_xc %>%
+  filter(grepl("MIAC", meet_name)) %>%
+  filter(race_group == "Men") %>%
+  mutate(score = as.numeric(score)) %>%
+  filter(!is.na(score)) %>%
+  group_by(team, meet_year) %>%
+  top_n(n = -5, wt = score) %>%
+  summarise(team_score = sum(score)) %>%
+  group_by(meet_year) %>%
+  arrange(team_score) %>%
+  mutate(team_rank = row_number()) %>%
+  arrange(meet_year)
+```
+
+Plot
+
+```{r}
+men_team_placing_plot <- ggplot(miac_men_team_placings, aes(x = meet_year, y = team_rank, group = team)) + geom_point(aes(color = team), size = 2) + geom_line(aes(color = team)) + labs(title = "MIAC Men Team Placings 2012 - 2016", x = "year",  y = "team rank") + scale_color_manual(values=c("palevioletred1", "violetred1", "red", "darkorange2", "goldenrod", "green1", "green4", "turquoise", "blue", "purple", "slategrey")) 
+
+men_team_placing_plot
+```
+
+Women
+```{r}
+miac_women_team_placings <-
+  miac_xc %>%
+  filter(grepl("MIAC", meet_name)) %>%
+  filter(race_group == "Women") %>%
+  mutate(score = as.numeric(score)) %>%
+  filter(!is.na(score)) %>%
+  group_by(team, meet_year) %>%
+  top_n(n = -5, wt = score) %>%
+  summarise(team_score = sum(score)) %>%
+  group_by(meet_year) %>%
+  arrange(team_score) %>%
+  mutate(team_rank = row_number()) %>%
+  arrange(meet_year)
+```
+
+Plot
+```{r}
+women_team_placing_plot <- ggplot(miac_women_team_placings, aes(x = meet_year, y = team_rank, group = team)) + geom_point(aes(color = team), size = 2) + geom_line(aes(color = team)) + labs(title = "MIAC Women Team Placings 2012 - 2016", x = "year",  y = "team rank") + scale_color_manual(values=c("palevioletred1", "violetred1", "red", "darkorange2", "goldenrod", "green1", "green4", "turquoise", "blue", "steelblue4", "purple", "slategrey")) 
+
+women_team_placing_plot
+```

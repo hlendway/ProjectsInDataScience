@@ -1,0 +1,100 @@
+---
+title: "Cross Country Models"
+output: html_notebook
+---
+
+
+```{r}
+library(rvest)
+library(dplyr)
+library(magrittr)
+library(tidyverse)
+library(jsonlite)
+library(stringr)
+library(xml2)
+library(XML)
+library(rvest)
+library(tidyverse)
+library(httr)
+library(httpuv)
+library(RCurl)
+library(stringr)
+library(lubridate)
+library(tree)
+library(caret)
+library(tree)
+library(randomForest)
+library(gbm)
+```
+
+
+```{r}
+miac <- read.csv("C:/Users/CPC24/Documents/HeatherRTrainingFun/finalMIAC171101TEST.csv")
+
+#writeableData <- miac %>% 
+#  replace_na(list(score=0)) %>% 
+#  select(-time,-X) 
+
+#write.csv(writeableData,"C:/Users/CPC24/Documents/HeatherRTrainingFun/miacNoTime171104.csv")
+
+miacSchools = c("Augsburg", "Bethel", "Carleton", "Concordia Moorhead", "Gustavus Adolphus", "Hamline", "Macalester", "St. Benedict", "St. Catherine", "St. John's", "Saint Mary's", "St. Olaf", "St. Thomas")
+
+modelingSet <- miac %>% 
+  filter(team %in% miacSchools,
+         (meet_kilometers==6 | meet_kilometers==8)) %>% 
+  mutate(class_year = substr(class_year,1,2),
+         class_year = as.factor(toupper(class_year)),
+         meet_name = ifelse((grepl("MIAC",meet_name)),"Minnesota Intercollegiate Championships",as.character(meet_name))) %>% 
+  select(name,meet_name,meet_year,new_time,race_group,class_year,team) %>% 
+  group_by(name,meet_name,meet_year,class_year,race_group) %>% 
+  spread(meet_name,new_time,fill="") %>% 
+  unite("times",c(6:12,14:30),sep=",",remove=TRUE) %>% 
+  mutate(times = gsub("(,,*)",",",times),
+         times = gsub("^,*|,*$","",times)) %>% 
+  separate(times,c("meet1","meet2","meet3"),sep=",",remove = TRUE) %>% 
+  filter(!is.na(meet2)) %>% 
+  mutate(meet1=as.numeric(meet1),
+         meet2=as.numeric(meet2),
+         meet3 = ifelse((is.na(meet3)),((meet1+meet2)/2),as.numeric(meet3))) %>% 
+  filter(`Minnesota Intercollegiate Championships`!="") %>% 
+  rename(champTime=`Minnesota Intercollegiate Championships`)
+
+write.csv(modelingSet,"C:/Users/CPC24/Documents/HeatherRTrainingFun/modelingSet171104.csv")
+
+
+set.seed(33)
+smp_size <- floor(0.8 * nrow(modelingSet))
+train_ind <- sample(seq_len(nrow(modelingSet)), size = smp_size)
+train <- modelingSet[train_ind, ]
+test <- modelingSet[-train_ind, ]
+
+#lm
+#glm
+```
+
+```{r}
+#lm
+
+lm <- lm(champTime ~ race_group+class_year+meet1+meet2+meet3, data=train)
+summary(lm)
+
+#gbm
+FWC.boost=gbm(champTime ~ race_group+class_year+meet1+meet2+meet3, data = train,
+              distribution = "gaussian",n.trees = 5000,
+              interaction.depth = 4)
+summary(FWC.boost)
+
+lmtest <- predict(lm, test)    
+gbtreetest <- predict(FWC.boost,test,n.trees=5000)
+TestResults <- test %>% 
+    dplyr::select(c(champTime,race_group,class_year)) %>% 
+    mutate(lmtest, gbtreetest)%>%
+    mutate(lmError=(champTime-lmtest),gbtreeError=(champTime-gbtreetest))
+
+mean(TestResults$lmError^2)   
+
+mean(TestResults$gbtreeError^2)
+
+
+```
+

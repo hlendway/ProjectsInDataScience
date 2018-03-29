@@ -1,0 +1,547 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Research Questions:
+1. How much recruiting/interactions with recruits do coaches need to do to get a full roster each year?
+2. What does the current athletic student body look like, could this help you target recruits?
+3. Once a recruited student has been accepted what is the rate for which students attend vs. not and what was different about their experiences that may have influenced their decision.
+
+1. Data from athletics
+2. Data from admissions?
+3. Historical roster lists
+4. Data interest form online could be helpful
+
+```{r}
+library(rvest)
+library(dplyr)
+library(magrittr)
+library(tidyverse)
+library(jsonlite)
+library(stringr)
+library(xml2)
+library(XML)
+library(rvest)
+library(tidyverse)
+library(httr)
+library(httpuv)
+library(RCurl)
+```
+
+This chunk of code didn't work well, use second chunk
+```{r}
+athleteData <- NULL
+athleteData2 <- NULL
+df <- NULL
+df2 <- NULL
+flag <- 0
+flag2 <- 0
+
+#for(i in 1:411) {
+ i=1
+  url = paste("http://athletics.macalester.edu/roster.aspx?roster=",i,sep="")
+  teamPage <- read_html(url)
+  
+  teamYearRoster <- teamPage %>% 
+    html_node(".page_title") %>%
+    html_nodes("h2") %>% 
+    html_text() %>% 
+    toString()
+  
+  rosterList <- teamPage %>% 
+    html_nodes(".roster_dgrd_item") #(".default_dgrd_alt"))
+  
+  if(length(rosterList) > 0) {
+    for(j in 1:length(rosterList)) {
+      name = ""
+      year = ""
+      hometownHS = ""
+      
+      name <- rosterList[j] %>% 
+        html_node(".roster_dgrd_full_name") %>% 
+        html_node("a") %>% 
+        html_text() %>% 
+        toString()
+      
+      year <- rosterList[j] %>% 
+        html_node(".roster_dgrd_academic_year") %>% 
+        html_text() %>% 
+        toString()
+            
+      location <- rosterList[j] %>% 
+        html_node(".roster_dgrd_hometownhighschool") %>% 
+        html_text() %>% 
+        toString()
+      
+        df <- data.frame(teamYearRoster,name,year,location,i)
+  
+      if(flag == 0) {
+        athleteData <- df
+      } else {
+        athleteData <- rbind(athleteData,df)
+      }
+      
+      flag <- 1
+      
+    }
+  }
+  
+  rosterList2 <- teamPage %>% 
+    html_nodes(".default_dgrd_alt")
+  
+  if(length(rosterList2) > 0) {
+    for(j in 1:length(rosterList2)) {
+      name = ""
+      year = ""
+      hometownHS = ""
+      
+      name <- rosterList2[j] %>% 
+        html_node(".roster_dgrd_full_name") %>% 
+        html_node("a") %>% 
+        html_text() %>% 
+        toString()
+      
+      year <- rosterList2[j] %>% 
+        html_node(".roster_dgrd_academic_year") %>% 
+        html_text() %>% 
+        toString()
+            
+      location <- rosterList2[j] %>% 
+        html_node(".roster_dgrd_hometownhighschool") %>% 
+        html_text() %>% 
+        toString()
+      
+        df2 <- data.frame(teamYearRoster,name,year,location,i)
+  
+      if(flag2 == 0) {
+        athleteData2 <- df2
+      } else {
+        athleteData2 <- rbind(athleteData2,df2)
+      }
+      
+      flag2 <- 1
+      
+    }
+  }
+  
+  print(url)
+  
+#}
+  
+finalAthleteRoster <- rbind(athleteData,athleteData2)
+  
+#teamPage <- read_html("http://athletics.macalester.edu/roster.aspx?roster=1")
+```
+#flatten <- will flatten nested data frames into it's own columns basically
+```{r}
+athleteData <- NULL
+df <- NULL
+flag <- 0
+
+for(i in 1:411) {
+  #i=1
+  url = paste("http://athletics.macalester.edu/roster.aspx?roster=",i,sep="")
+  teamPage <- read_html(url)
+  
+  teamYearRoster <- teamPage %>% 
+    html_node(".page_title") %>%
+    html_nodes("h2") %>% 
+    html_text() %>% 
+    toString()
+  
+  nameList <- teamPage %>% 
+    html_nodes(".roster_dgrd_full_name")
+    
+  yearList <- teamPage %>% 
+    html_nodes(".roster_dgrd_academic_year")
+  
+  hometownList <- teamPage %>% 
+    html_nodes(".roster_dgrd_hometownhighschool")
+  
+  if(length(nameList) > 0) {
+    for(j in 1:length(nameList)) {
+      name = ""
+      year = ""
+      hometownHS = ""
+      
+      name <- nameList[j] %>% 
+        html_node("a") %>% 
+        html_text() %>% 
+        toString()
+      
+      year <- yearList[j] %>% 
+        html_text() %>% 
+        toString()
+            
+      location <- hometownList[j] %>% 
+        html_text() %>% 
+        toString()
+      
+        df <- data.frame(teamYearRoster,name,year,location,i)
+  
+      if(flag == 0) {
+        athleteData <- df
+      } else {
+        athleteData <- rbind(athleteData,df)
+      }
+      
+      flag <- 1
+      
+    }
+  }
+  print(url)
+}
+
+#write.csv(athleteData,"C:/Users/CPC24/Documents/HeatherRTrainingFun/athleteData171004.csv")
+```
+```{r}
+athleteData <- athleteData %>% 
+  mutate()
+```
+
+
+```{r}
+athleteData <- read_csv("C:/Users/CPC24/Documents/HeatherRTrainingFun/athleteData171004.csv")
+
+athleteDataClean <- athleteData %>% 
+  separate(location,c("citystate","highschool"),sep=" / ") %>% 
+  separate(citystate,c("city","state"),sep=", ")
+
+cleanState <- function(state){
+  ifelse((state=="Ak"|state=="AK"),"AK",
+         ifelse((state=="AL"),"AL",
+                ifelse((state=="AL"|state=="Ala."|state=="Alab."),"AL")))
+}
+
+
+states <- athleteDataClean %>% distinct(state) %>% arrange(state)
+```
+
+```{r}
+#Scrape the data from this page: https://www.tfrrs.org/results_search.html?page=0&title=1&go=1&state=mn&sport=xc to get links to the individual result links then scrap those
+
+flag <- 0
+df <- NULL
+resultLinks <- NULL
+resultList <- read_html("https://www.tfrrs.org/results_search.html?page=0&title=1&go=1&state=mn&sport=xc")
+
+links <- resultList %>% 
+  html_nodes("#results_search a")
+
+
+for(i in 1:length(links)) {
+  
+  link <- links[i] %>% 
+    html_attrs() %>% 
+    toString()
+ 
+  df <- tibble(link)
+
+  if(flag == 0) {
+    resultLinks <- df
+  } else {
+    resultLinks <- rbind(resultLinks,df)
+  }
+  
+  flag <- 1
+   
+}
+
+resultLinksClean <- resultLinks %>% 
+  mutate(link = gsub("(//www)","https://www",link),
+         link = as.character(link))
+
+write.csv(resultLinks,"/Users/hannahsonsalla/Desktop/resultLinks.csv")
+
+```
+
+Final
+```{r}
+resultLinks <- read.csv("/Users/hannahsonsalla/Desktop/resultLinks.csv")
+
+resultLinks <- resultLinks %>%
+  mutate(link = gsub("(//www)","https://www",link),
+         link = as.character(link))
+
+miac_women_xc<-data.frame()
+
+#miac_women_xcBU <- miac_women_xc
+
+# meet urls
+
+# ***table:nth-child(17)*** 
+#Carleton Running of the Cows 2017 - https://www.tfrrs.org/results/xc/12950.html 
+
+# ***table:nth-child(13) ***
+# St. Kates Invite 2017 - https://www.tfrrs.org/results/xc/13115.html
+# Having trouble with alum team
+# Roy Griak 2017 - https://www.tfrrs.org/results/xc/12864.html
+# Having trouble with Lakeland University
+
+# *** table:nth-child(6) *** 
+# Alum individual
+# Bob Waxlax Invitational 2017 - https://www.tfrrs.org/results/xc/13109.html
+
+# *** table:nth-child(8) *** 
+# St. Olaf Invitational 2017 - https://www.tfrrs.org/results/xc/12550.html
+
+
+
+# loop for table:nth-child(17) 
+for (url in resultLinks$link) {
+  
+    #url=resultLinks$link[1]
+    #url = "https://www.tfrrs.org/results/xc/11018.html"
+    #read the page 
+    page<- read_html(url)
+    
+        #Retrieve meet name
+    meet_name <-
+      page %>%
+      html_nodes(".title a") %>%
+      html_text()
+    
+    #Retrieve meet date
+    meet_date <-
+      page %>%
+      html_nodes(".datelocation li:nth-child(1)") %>%
+      html_text()
+    meet_date_short<-substr(meet_date,start=6,stop=14)
+    
+    #Retrieve meet location
+    meet_location <-
+      page %>%
+      html_nodes(".datelocation li:nth-child(2)") %>%
+      html_text()
+    meet_location_short<-substr(meet_location,start=12,stop=(nchar(meet_location) - 4))
+    meet_location_short = gsub("(\n)|(\nCity Not Supplied,)",", ",meet_location_short)
+    
+    start_time <-
+      page %>%
+      html_node("div:nth-child(12) span") %>%
+      html_text()
+    start_time = gsub("(\n)*(\t)*","",start_time)
+    
+    race <- page %>% 
+      html_nodes("a+ div div")
+    
+    #Last table on page contains womens results
+    tables <- page %>% 
+      html_nodes("table")
+    
+    lastTableLocation <- length(tables)
+    
+    tableList = c(lastTableLocation)
+    tableRef = lastTableLocation - 2
+    while(tableRef >= 4) {
+      tableList=c(tableRef,tableList)
+      tableRef = tableRef - 2
+    }
+    
+     
+    for(t in (1:length(tableList))) { 
+      
+      race_group=""
+      if (length(race[t] %>% html_text()>0)) {
+        race_group = race[t] %>% html_text()
+        race_group = gsub("(\n)*(\t)*","",race_group)
+      } 
+    
+      lastTableDivs <- tables[tableList[t]] %>% 
+        html_nodes("tr") %>% 
+        html_nodes("td") %>% 
+        html_nodes("div")
+      
+      #Need to change this to only loop through first 7 td divs in the table
+      tableRows <- tables[tableList[t]] %>% 
+        html_nodes("tr")
+      
+      for(row in (1:length(tableRows))) {
+        
+        tableDivs <- tableRows[row] %>% 
+          html_nodes("td")  %>% 
+          html_nodes("div")
+        
+        if(length(tableDivs)>0) {
+        
+         # Retrieve place
+          women_place <- tableDivs[1] %>%
+            html_text()
+          
+          # Retrieve and inspect full names
+          women_name <- tableDivs[2] %>%
+            html_text()
+          women_name_short<-substr(women_name,start=10,stop=nchar(women_name))
+      
+          # Retrieve and inspect class year
+          women_class_year <- tableDivs[3] %>%
+            html_text()
+      
+          # Retrieve and inspect team
+          women_team <- tableDivs[4] %>%
+            html_text()
+          women_team_short<-substr(women_team,start=10,stop=nchar(women_team))
+      
+          # Retrieve and inspect avg. mile
+          women_avg_mile <- tableDivs[5] %>%
+            html_text()
+          
+          # Retrieve time
+          women_time <- tableDivs[6] %>%
+            html_text()
+          
+          # Retrieve score
+          women_score <- tableDivs[7] %>%
+            html_text()
+          
+          
+          meet_info <- 
+            tibble(meet_name = meet_name, meet_date = meet_date_short, meet_location = meet_location_short, start_time=start_time, race_group=race_group, place = women_place, name = women_name_short, class_year = women_class_year, team = women_team_short, avg_mile = women_avg_mile, time = women_time, score = women_score, url=url)
+        
+          #store the temp values into the master dataframe
+          miac_women_xc<-rbind(miac_women_xc, meet_info)
+        }
+      }
+    }
+    print(url)
+} 
+
+head(miac_women_xc)
+
+write.csv(miac_women_xc,"/Users/hannahsonsalla/Desktop/miacCCResults.csv")
+
+test <- miac_women_xc %>% 
+  mutate(race_group = gsub("(\n)*(\t)*","",race_group),
+         start_time = gsub("(\n)*(\t)*","",start_time),
+         meet_location = gsub("(\n)|(\nCity Not Supplied,)",", ",meet_location)) %>% 
+  filter(place!="Place")
+
+```
+
+Add get "div" get "a" and add the link to show which is mens and which is womens since the order changes
+
+
+```{r}
+##ORIGINAL
+# loop for table:nth-child(17) 
+for (url in resultLinks$link) {
+  
+    #url=resultLinks$link[1]
+    #url = "https://www.tfrrs.org/results/xc/12864.html"
+    #read the page 
+    page<- read_html(url)
+    
+        #Retrieve meet name
+    meet_name <-
+      page %>%
+      html_nodes(".title a") %>%
+      html_text()
+    
+    #Retrieve meet date
+    meet_date <-
+      page %>%
+      html_nodes(".datelocation li:nth-child(1)") %>%
+      html_text()
+    meet_date_short<-substr(meet_date,start=6,stop=14)
+    
+    #Retrieve meet location
+    meet_location <-
+      page %>%
+      html_nodes(".datelocation li:nth-child(2)") %>%
+      html_text()
+    meet_location_short<-substr(meet_location,start=12,stop=(nchar(meet_location) - 4))
+    
+    start_time <-
+      page %>%
+      html_node("div:nth-child(12) span") %>%
+      html_text()
+    
+    race <- page %>% 
+      html_nodes("a+ div div")
+    
+    #Last table on page contains womens results
+    tables <- page %>% 
+      html_nodes("table")
+    
+    lastTableLocation <- length(tables)
+    
+    tableList = c(lastTableLocation)
+    tableRef = lastTableLocation - 2
+    while(tableRef >= 4) {
+      tableList=c(tableRef,tableList)
+      tableRef = tableRef - 2
+    }
+    
+     
+    for(t in (1:length(tableList))) { 
+      
+      race_group=""
+      if (length(race[t] %>% html_text()>0)) {
+        race_group = race[t] %>% html_text()
+      } 
+    
+      lastTableDivs <- tables[tableList[t]] %>% 
+        html_nodes("tr") %>% 
+        html_nodes("td") %>% 
+        html_nodes("div")
+      
+      #Need to change this to only loop through first 7 td's
+      tableTDs <- tables[tableList[t]] %>% 
+        html_nodes("tr") %>% 
+        html_nodes("td") 
+      
+      tableDivs <- tableTDs %>% 
+        html_nodes("div")
+      
+      for(divCol in (1:7))
+      ##
+      
+      #will need to remove header rows but this is easiest.
+      for(y in 1:(length(lastTableDivs)/7)-1) {
+        
+         # Retrieve place
+          women_place <- lastTableDivs[1+7*y] %>%
+            html_text()
+          
+          # Retrieve and inspect full names
+          women_name <- lastTableDivs[2+7*y] %>%
+            html_text()
+          women_name_short<-substr(women_name,start=10,stop=nchar(women_name))
+      
+          # Retrieve and inspect class year
+          women_class_year <- lastTableDivs[3+7*y] %>%
+            html_text()
+      
+          # Retrieve and inspect team
+          women_team <- lastTableDivs[4+7*y] %>%
+            html_text()
+          women_team_short<-substr(women_team,start=10,stop=nchar(women_team))
+      
+          # Retrieve and inspect avg. mile
+          women_avg_mile <- lastTableDivs[5+7*y] %>%
+            html_text()
+          
+          # Retrieve time
+          women_time <- lastTableDivs[6+7*y] %>%
+            html_text()
+          
+          # Retrieve score
+          women_score <- lastTableDivs[7+7*y] %>%
+            html_text()
+          
+          
+          meet_info <- 
+            tibble(meet_name = meet_name, meet_date = meet_date_short, meet_location = meet_location_short, start_time=start_time, race_group=race_group, place = women_place, name = women_name_short, class_year = women_class_year, team = women_team_short, avg_mile = women_avg_mile, time = women_time, score = women_score, url=url)
+        
+          #store the temp values into the master dataframe
+          miac_women_xc<-rbind(miac_women_xc, meet_info)
+          
+      }
+    }
+    print(url)
+    print(y)
+} 
+
+```
+
